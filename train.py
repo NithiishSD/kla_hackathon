@@ -39,12 +39,12 @@ def main():
         batch_size=4,           # real per-step batch (VRAM-bound)
         target_batch_size=32,   # simulated via accumulation
         scale_factor=2,
-        edge_weight=0.8,
+        edge_weight=0.1,
         freq_weight=0.15,
         lr=2e-4,
-        weight_decay=5e-4,
-        scheduler_patience=3,
-        early_stop_patience=7,
+        weight_decay=1e-4,
+        scheduler_patience=2,
+        early_stop_patience=6,
         num_workers=min(8, os.cpu_count() or 1),
         num_epochs=50,
         use_compile=False,
@@ -131,7 +131,7 @@ def main():
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             epochs_since_improvement = 0
-            ckpt_path = os.path.join(config["checkpoint_dir"], "best_model.pt")
+            ckpt_path = os.path.join(config["checkpoint_dir"], "best_model2.pt")
             state_dict = (engine.model.module.state_dict()
                           if isinstance(engine.model, torch.nn.DataParallel)
                           else engine.model.state_dict())
