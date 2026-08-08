@@ -80,10 +80,9 @@ def main():
 
     optimizer = build_optimizer(engine.model, lr=config["lr"],
                                  weight_decay=config["weight_decay"])
-    total_steps = config["num_epochs"] * len(train_loader)
-    lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=config["lr"], total_steps=total_steps
-    )
+    # total_steps = config["num_epochs"] * len(train_loader)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
+
 
     if config["use_compile"]:
         engine.compile_model()
@@ -99,12 +98,18 @@ def main():
     for epoch in range(config["num_epochs"]):
         t0 = time.time()
 
+        # 1. TRAINING PHASE
+        model.train()
         train_losses = []
         for lr_img, gt_img in train_loader:
-            loss = engine.train_step(optimizer, criterion, lr_scheduler, lr_img, gt_img)
+            # NOTE: Pass None for lr_scheduler here because ReduceLROnPlateau 
+            # is stepped at the EPOCH level, not the BATCH level.
+            loss = engine.train_step(optimizer, criterion, None, lr_img, gt_img)
             train_losses.append(loss)
         avg_train_loss = sum(train_losses) / len(train_losses)
 
+        # 2. VALIDATION PHASE
+        model.eval()
         val_losses, val_psnrs = [], []
         for lr_img, gt_img in val_loader:
             loss, pred = engine.eval_step(criterion, lr_img, gt_img)
@@ -113,33 +118,54 @@ def main():
         avg_val_loss = sum(val_losses) / len(val_losses)
         avg_val_psnr = sum(val_psnrs) / len(val_psnrs)
 
-        dt = time.time() - t0
-        print(f"Epoch {epoch+1}/{config['num_epochs']} "
-              f"[{dt:.1f}s] train_loss={avg_train_loss:.4f} "
-              f"val_loss={avg_val_loss:.4f} val_psnr={avg_val_psnr:.2f}dB")
+        # 3. SCHEDULER STEP (The "Expert" Fix)
+        # We step based on the validation loss. 
+        # If val_loss doesn't improve for 'patience' epochs, LR drops.
+        old_lr = optimizer.param_groups[0]['lr']
+        #scheduler.step(avg_val_loss)
+        new_lr = optimizer.param_groups[0]['lr']
 
+        dt = time.time() - t0
+        
+        # 4. LOGGING
+        lr_msg = f" [LR: {old_lr:.2e}]" if old_lr == new_lr else f" [LR REDUCED: {old_lr:.2e} -> {new_lr:.2e}]"
+        print(f"Epoch {epoch+1}/{config['num_epochs']} "
+            f"[{dt:.1f}s]{lr_msg} train_loss={avg_train_loss:.4f} "
+            f"val_loss={avg_val_loss:.4f} val_psnr={avg_val_psnr:.2f}dB")
+
+        # 5. CHECKPOINTING & EARLY STOPPING
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             epochs_since_improvement = 0
             ckpt_path = os.path.join(config["checkpoint_dir"], "best_model.pt")
+            
+            # Unwrapping DataParallel if necessary
             state_dict = (engine.model.module.state_dict()
-                          if isinstance(engine.model, torch.nn.DataParallel)
-                          else engine.model.state_dict())
-            torch.save({"model_state": state_dict, "config": config,
-                        "epoch": epoch, "val_loss": avg_val_loss,
-                        "val_psnr": avg_val_psnr}, ckpt_path)
+                        if isinstance(engine.model, torch.nn.DataParallel)
+                        else engine.model.state_dict())
+                        
+            torch.save({
+                "model_state": state_dict, 
+                "config": config,
+                "epoch": epoch, 
+                "val_loss": avg_val_loss,
+                "val_psnr": avg_val_psnr,
+                "lr": new_lr # Save current LR for resuming
+            }, ckpt_path)
             print(f"  -> new best val_loss, saved to {ckpt_path}")
         else:
             epochs_since_improvement += 1
-            print(f"  -> val_loss did not improve "
-                  f"({epochs_since_improvement}/{config['patience']})")
+            print(f"  -> val_loss did not improve ({epochs_since_improvement}/{config['patience']})")
+            
             if epochs_since_improvement >= config["patience"]:
-                print(f"STOPPING: val_loss has not improved for "
-                      f"{config['patience']} epochs while training "
-                      f"continued -- this is the overfitting signal. "
-                      f"Best checkpoint is saved at "
-                      f"{config['checkpoint_dir']}/best_model.pt")
-                break
+                # SCIENTIFIC CHECK: 
+                # We only stop if the LR has already been reduced significantly.
+                # If the LR is still at the starting value, we might want to wait longer.
+                if new_lr < config["lr"]:
+                    print(f"STOPPING: Model has fine-tuned at lower LR and plateaued.")
+                    break
+                else:
+                    print(f"WAITING: Val_loss stalled but LR hasn't dropped yet. Giving it more time...")
 
     print("Training finished.")
 

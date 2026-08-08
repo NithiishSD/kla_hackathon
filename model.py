@@ -207,17 +207,24 @@ def train_one_step(model, optimizer, criterion, lr_scheduler, input_img, gt_img)
 
 
 if __name__ == "__main__":
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     model = SemiRestoreNet_V2(dim=64, num_blocks=2, scale_factor=2).to(device)
     criterion = KLAMetrologyLoss().to(device)
-    optimizer = build_optimizer(model, lr=2e-4, weight_decay=1e-4)
-    lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=2e-4, total_steps=1000)
+    optimizer = build_optimizer(model, lr=2e-4)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer, 
+    mode='min', 
+    factor=0.5,     # Reduce LR by half
+    patience=3,     # Wait 3 epochs before dropping
+    verbose=True
+)
 
     dummy_lr = torch.rand(2, 1, 128, 128, device=device)
     dummy_gt = torch.rand(2, 1, 256, 256, device=device)
 
-    loss_val = train_one_step(model, optimizer, criterion, lr_scheduler, dummy_lr, dummy_gt)
+    loss_val = train_one_step(model, optimizer, criterion, scheduler, dummy_lr, dummy_gt)
     print(f"Sanity check step ok. Loss: {loss_val:.4f}")
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Total params: {n_params / 1e6:.2f}M")

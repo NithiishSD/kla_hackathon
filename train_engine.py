@@ -104,7 +104,8 @@ class HardwareAwareEngine:
             loss.backward()
             optimizer.step()
 
-        lr_scheduler.step()
+        if lr_scheduler is not None:
+            lr_scheduler.step()
         return loss.item()
 
     @torch.no_grad()
