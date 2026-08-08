@@ -1,7 +1,7 @@
 # SemiRestoreNet-V2: High-Fidelity Semiconductor Metrology Restoration
 
 ## 1. Executive Summary
-SemiRestoreNet-V2 is a hybrid deep-learning pipeline engineered specifically for the restoration of Scanning Electron Microscopy (SEM) images. The system addresses three simultaneous degradations: **Multiplicative Speckle Noise**, **Additive Gaussian Blur**, and **Spatial Resolution Loss (128px → 256px)**. 
+SemiRestoreNet-V2 is a hybrid deep-learning pipeline engineered specifically for the restoration of Scanning Electron Microscopy (SEM) images. The system addresses three simultaneous degradations: **Multiplicative Speckle Noise**, **Additive Gaussian Blur**, and **Spatial Resolution Loss (128px → 256px or 512px)**. 
 
 By combining a **Restormer-based Transformer backbone** with **Fourier Spectral Priors**, we achieve state-of-the-art results in preserving **Line Edge Roughness (LER)** and sub-nanometer geometric fidelity while maintaining high-throughput inference speeds on NVIDIA H100 hardware.
 
