@@ -15,107 +15,87 @@ Known tradeoffs (see CHANGES_round4.md for the full writeup):
   (fixed from an earlier draft that compiled the DataParallel wrapper
   itself, which is not a supported combination).
 """
-
 import torch
 import torch.nn as nn
 
-
-class HardwareAwareEngine:
-    def __init__(self, model, device="cuda"):
+class HardwareEngine:
+    def __init__(self, model, device="cuda", target_batch_size=32, local_batch_size=4):
         self.device = torch.device(device)
         self.gpu_name = torch.cuda.get_device_name(0)
         self.major, self.minor = torch.cuda.get_device_capability(0)
         self.num_gpus = torch.cuda.device_count()
 
-        # 1. Hardware-specific precision tuning.
-        # Ampere+ (capability >= 8, e.g. RTX 30/40-series, A100, H100) has
-        # native bf16 tensor-core support. Turing and earlier (T4, capability
-        # 7.5) does not -- bf16 there is much slower than fp16, so use fp16
-        # + GradScaler instead.
+        # 1. Precision Detection (RTX 4050/H100 get bf16, T4 gets fp16)
         if self.major >= 8:
             self.precision = torch.bfloat16
             self.use_scaler = False
-            print(f"--- [Modern GPU] Compute capability {self.major}.{self.minor} "
-                  f"({self.gpu_name}) -- using bfloat16, no GradScaler. ---")
+            print(f"--- [Modern GPU] Using bfloat16 on {self.gpu_name} ---")
         else:
             self.precision = torch.float16
             self.use_scaler = True
-            print(f"--- [Legacy/T4 GPU] Compute capability {self.major}.{self.minor} "
-                  f"({self.gpu_name}) -- using float16 + GradScaler. ---")
+            print(f"--- [Legacy GPU] Using float16 + Scaler on {self.gpu_name} ---")
 
         self.scaler = torch.amp.GradScaler('cuda', enabled=self.use_scaler)
 
-        # 2. Move + (optionally) compile the RAW model BEFORE wrapping in
-        # DataParallel. torch.compile on a DataParallel-wrapped module is
-        # not a supported combination (DataParallel replicates the module
-        # per forward call, which conflicts with how Inductor traces/caches
-        # a compiled graph) -- compiling the inner module first and letting
-        # DataParallel replicate the *compiled* module is the correct order.
+        # 2. Gradient Accumulation Logic (The Bridge)
+        # Calculates how many steps to wait before updating weights
+        self.accum_steps = max(1, target_batch_size // (local_batch_size * self.num_gpus))
+        print(f"--- [Compute] Simulating Batch {target_batch_size} via {self.accum_steps} accumulation steps ---")
+
+        # 3. Model Setup & Multi-GPU
         self.model = model.to(self.device)
         self._compiled = False
-
-        # 3. Multi-GPU wrapping happens last, after any compile call.
         if self.num_gpus > 1:
-            print(f"--- [Multi-GPU] {self.num_gpus} GPUs found. Wrapping in "
-                  f"DataParallel. Note: GPU-0 will carry a heavier memory "
-                  f"load than the others (outputs/loss are gathered there); "
-                  f"don't assume linear scaling. ---")
+            print(f"--- [Multi-GPU] Wrapping in DataParallel (Kaggle Mode) ---")
             self.model = nn.DataParallel(self.model)
 
     def compile_model(self):
-        """Compile the model. Call this BEFORE training starts, and only
-        once. Safe to call even if it's a no-op on unsupported setups --
-        falls back to eager on failure."""
-        if self._compiled:
-            return self.model
+        """Compiles the inner model correctly to avoid DataParallel conflicts"""
+        if self._compiled: return self.model
         try:
-            print("--- [Optimizer] Attempting torch.compile... ---")
             if isinstance(self.model, nn.DataParallel):
-                # Compile the inner module, then rewrap -- see note above.
                 inner = torch.compile(self.model.module)
                 self.model = nn.DataParallel(inner)
             else:
                 self.model = torch.compile(self.model)
             self._compiled = True
-            print("--- [Optimizer] Compile requested successfully "
-                  "(graph builds lazily on first forward pass -- verify "
-                  "with a real batch before trusting it in training). ---")
+            print("--- [Optimizer] torch.compile successful ---")
         except Exception as e:
-            print(f"--- [Optimizer] Compile failed/unsupported: {e}. "
-                  f"Falling back to eager. ---")
+            print(f"--- [Optimizer] Compile failed: {e}. Using Eager mode. ---")
         return self.model
 
-    def train_step(self, optimizer, criterion, lr_scheduler, input_img, gt_img):
+    def train_step(self, i, optimizer, criterion, lr_scheduler, input_img, gt_img):
         self.model.train()
-        optimizer.zero_grad(set_to_none=True)
+        
+        # Only zero gradients at the start of a new 'Target Batch'
+        if i % self.accum_steps == 0:
+            optimizer.zero_grad(set_to_none=True)
 
         input_img = input_img.to(self.device, non_blocking=True)
         gt_img = gt_img.to(self.device, non_blocking=True)
 
         with torch.amp.autocast('cuda', dtype=self.precision):
             output = self.model(input_img)
-            loss = criterion(output, gt_img)
+            # Scale loss by accumulation steps so the math stays consistent
+            loss = criterion(output, gt_img) / self.accum_steps
 
+        # Backward pass
         if self.use_scaler:
             self.scaler.scale(loss).backward()
-            self.scaler.step(optimizer)
-            self.scaler.update()
         else:
             loss.backward()
-            optimizer.step()
 
-        if lr_scheduler is not None:
-            lr_scheduler.step()
-        return loss.item()
+        # Update weights only after N steps
+        if (i + 1) % self.accum_steps == 0:
+            if self.use_scaler:
+                self.scaler.step(optimizer)
+                self.scaler.update()
+            else:
+                optimizer.step()
+            
+            if lr_scheduler is not None:
+                # If using OneCycleLR, step here. If ReduceLROnPlateau, step in epoch loop.
+                if not isinstance(lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    lr_scheduler.step()
 
-    @torch.no_grad()
-    def eval_step(self, criterion, input_img, gt_img):
-        self.model.eval()
-        input_img = input_img.to(self.device, non_blocking=True)
-        gt_img = gt_img.to(self.device, non_blocking=True)
-
-        with torch.amp.autocast('cuda', dtype=self.precision):
-            output = self.model(input_img)
-            loss = criterion(output, gt_img)
-
-        return loss.item(), output
+        return loss.item() * self.accum_steps

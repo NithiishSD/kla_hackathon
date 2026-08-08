@@ -77,7 +77,9 @@ def main():
         edge_weight=config["edge_weight"],
         freq_weight=config["freq_weight"],
     )
-
+    #only when h100 in use, use bf16 and no grad scaler. Otherwise, use amp with grad scaler
+    #if torch.cuda.get_device_capability(0)[0] >= 8:
+     #   model = torch.compile(model)
     engine = HardwareAwareEngine(model)
     criterion = criterion.to(engine.device)
 
@@ -125,7 +127,7 @@ def main():
         # We step based on the validation loss. 
         # If val_loss doesn't improve for 'patience' epochs, LR drops.
         old_lr = optimizer.param_groups[0]['lr']
-        #scheduler.step(avg_val_loss)
+        scheduler.step(avg_val_loss)
         new_lr = optimizer.param_groups[0]['lr']
 
         dt = time.time() - t0

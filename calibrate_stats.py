@@ -68,7 +68,7 @@ def main():
     data_root = sys.argv[1] if len(sys.argv) > 1 else "./data"
     lr_dir = os.path.join(data_root, "train", "lossylr")
 
-    p_lo, p_hi = compute_global_percentiles(lr_dir, p_low=1.0, p_high=99.0)
+    p_lo, p_hi = compute_global_percentiles(lr_dir, p_low=1.0, p_high=99.5)
 
     stats = {"p_low": p_lo, "p_high": p_hi, "p_low_pct": 1.0, "p_high_pct": 99.0}
     out_path = os.path.join(data_root, "calib_stats.json")
