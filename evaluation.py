@@ -135,7 +135,7 @@ def main():
     # val_fraction) so this is genuinely the held-out set, not train data.
     full_train = SEMPairDataset(
         gt_dir=os.path.join(data_root, "train", "gt"),
-        lr_dir=os.path.join(data_root, "train", "lossylr"),
+        lr_dir=os.path.join(data_root, "train", "NoisyLR"),
         p_low=p_low, p_high=p_high,
         scale_factor=cfg["scale_factor"], augment=False,
     )
