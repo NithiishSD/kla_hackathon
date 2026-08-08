@@ -176,7 +176,7 @@ def build_dataloaders(data_root, scale_factor=2, batch_size=8, num_workers=8,
 
     full_train = SEMPairDataset(
         gt_dir=os.path.join(data_root, "train", "gt"),
-        lr_dir=os.path.join(data_root, "train", "lossylr"),
+        lr_dir=os.path.join(data_root, "train", "NoisyLR"),
         p_low=p_low, p_high=p_high,
         scale_factor=scale_factor,
         augment=True,
