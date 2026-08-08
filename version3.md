@@ -1,0 +1,1 @@
+this version has evaluation and training with comaprison of different config values
