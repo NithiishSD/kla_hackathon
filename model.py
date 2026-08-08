@@ -93,8 +93,21 @@ class SemiRestoreNet_V2(nn.Module):
                 nn.PixelShuffle(scale_factor),
                 nn.Conv2d(dim, 1, 3, padding=1),
             )
+            last_conv = self.upsampler[-1]
         else:
             self.upsampler = nn.Conv2d(dim, 1, 3, padding=1)
+            last_conv = self.upsampler
+
+        # CHANGE: zero-init the final conv so the residual ("out") starts
+        # at exactly zero. Without this, "out" is whatever a randomly
+        # initialized network produces at step 0 -- essentially noise added
+        # on top of the bicubic baseline -- so training starts from a much
+        # worse point than the "global residual learning" framing implies.
+        # With this init, forward() at step 0 returns clamp(0 + base, 0, 1)
+        # == the bicubic baseline itself, which is a far better starting
+        # point and should noticeably raise epoch-1 PSNR.
+        nn.init.zeros_(last_conv.weight)
+        nn.init.zeros_(last_conv.bias)
 
     def forward(self, x):
         # x is assumed already normalized to [0, 1] by sem_dataset.py's
