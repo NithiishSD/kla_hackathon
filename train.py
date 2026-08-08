@@ -33,12 +33,12 @@ def main():
     # ---- Config: edit this block for baseline vs. metrology HPO runs ----
     config = dict(
         dim=64,
-        num_blocks=2,
+        num_blocks=3,
         scale_factor=2,
-        edge_weight=0.5,
-        freq_weight=0.0,      # set to 0.1 for the "metrology" run
+        edge_weight=0.8,
+        freq_weight=0.15,      # set to 0.1 for the "metrology" run
         lr=2e-4,
-        weight_decay=1e-4,
+        weight_decay=5e-4,
         batch_size=8,
          # --- SCHEDULING TUNING ---
         scheduler_patience=3, # Drop LR if no improve for 3 epochs

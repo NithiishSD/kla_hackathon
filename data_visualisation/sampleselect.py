@@ -29,7 +29,7 @@ def get_targeted_samples(lr_dir, gt_dir, num_per_cat=1):
 
     # --- CATEGORY 4: The "OOD Test Check" (Random Test Sample) ---
     # Pick a random sample from the test folder
-    test_files = glob.glob(os.path.join('data/test', "*.npy"))
+    test_files = glob.glob(os.path.join('.././data/test', "*.npy"))
     test_sample = os.path.basename(test_files[0]) if test_files else None
 
     return {
@@ -40,5 +40,5 @@ def get_targeted_samples(lr_dir, gt_dir, num_per_cat=1):
     }
 
 # Execute and get the filenames
-targets = get_targeted_samples('.././data/train/lossylr', '.././data/train/gt')
+targets = get_targeted_samples('.././data/train/NoisyLR', '.././data/train/gt')
 print(targets)
