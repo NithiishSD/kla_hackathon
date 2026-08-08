@@ -34,7 +34,7 @@ def main():
     config = dict(
         dim=64,
         num_blocks=3,
-        local_batch_size=4;
+        local_batch_size=4,
         target_batch_size=32,
         scale_factor=2,
         edge_weight=0.8,
