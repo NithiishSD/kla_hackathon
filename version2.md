@@ -43,3 +43,9 @@ Epoch X+6: If progress still stalls, it drops to
 Epoch X+7: If the model still hasn't improved even with the tiny LR, the Early Stopping concludes that we have reached the mathematical limit of the model's capacity.
 Metrology Consideration (Sub-Nanometer Precision)
 In semiconductor scans, the "coarse" features (the lines) are easy to learn. The "fine" features (Line Edge Roughness) are hidden in the noise. High learning rates tend to "bounce" over these fine details. You need that low-LR phase to settle the edges. Without it, your SSIM score will plateau early.
+
+
+
+
+
+train results for the version 2:

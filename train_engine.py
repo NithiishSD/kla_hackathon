@@ -99,3 +99,14 @@ class HardwareEngine:
                     lr_scheduler.step()
 
         return loss.item() * self.accum_steps
+    @torch.no_grad()
+    def eval_step(self, criterion, input_img, gt_img):
+        self.model.eval()
+        input_img = input_img.to(self.device, non_blocking=True)
+        gt_img = gt_img.to(self.device, non_blocking=True)
+
+        with torch.amp.autocast('cuda', dtype=self.precision):
+            output = self.model(input_img)
+            loss = criterion(output, gt_img)
+
+        return loss.item(), output

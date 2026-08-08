@@ -17,7 +17,7 @@ import torch
 
 from sem_dataset import build_dataloaders
 from model import SemiRestoreNet_V2, KLAMetrologyLoss, build_optimizer
-from train_engine import HardwareAwareEngine
+from train_engine import  HardwareEngine
 
 
 def compute_psnr(pred, target, max_val=1.0):
@@ -34,6 +34,8 @@ def main():
     config = dict(
         dim=64,
         num_blocks=3,
+        local_batch_size=4;
+        target_batch_size=32,
         scale_factor=2,
         edge_weight=0.8,
         freq_weight=0.15,      # set to 0.1 for the "metrology" run
@@ -47,7 +49,7 @@ def main():
         num_epochs=50,
         use_compile=False,    # flip on only after verifying eager works
         checkpoint_dir="./checkpoints",
-        patience=5,           # epochs of rising val loss before early stop
+        patience=7,           # epochs of rising val loss before early stop
     )
     print("Config:", config)
 
@@ -80,13 +82,13 @@ def main():
     #only when h100 in use, use bf16 and no grad scaler. Otherwise, use amp with grad scaler
     #if torch.cuda.get_device_capability(0)[0] >= 8:
      #   model = torch.compile(model)
-    engine = HardwareAwareEngine(model)
+    engine = HardwareEngine(model,local_batch_size=config["local_batch_size"], target_batch_size=config["target_batch_size"])
     criterion = criterion.to(engine.device)
 
     optimizer = build_optimizer(engine.model, lr=config["lr"],
                                  weight_decay=config["weight_decay"])
     # total_steps = config["num_epochs"] * len(train_loader)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=config["scheduler_patience"], verbose=True)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=config["scheduler_patience"])
 
 
     if config["use_compile"]:
@@ -106,10 +108,10 @@ def main():
         # 1. TRAINING PHASE
         model.train()
         train_losses = []
-        for lr_img, gt_img in train_loader:
+        for i, (lr_img, gt_img) in enumerate(train_loader):
             # NOTE: Pass None for lr_scheduler here because ReduceLROnPlateau 
             # is stepped at the EPOCH level, not the BATCH level.
-            loss = engine.train_step(optimizer, criterion, None, lr_img, gt_img)
+            loss = engine.train_step(i,optimizer, criterion, None, lr_img, gt_img)
             train_losses.append(loss)
         avg_train_loss = sum(train_losses) / len(train_losses)
 
