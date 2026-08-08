@@ -40,8 +40,11 @@ def main():
         lr=2e-4,
         weight_decay=1e-4,
         batch_size=8,
+         # --- SCHEDULING TUNING ---
+        scheduler_patience=3, # Drop LR if no improve for 3 epochs
+        early_stop_patience=7,# Kill run if no improve for 7 epochs
         num_workers=min(8, os.cpu_count() or 1),
-        num_epochs=30,
+        num_epochs=50,
         use_compile=False,    # flip on only after verifying eager works
         checkpoint_dir="./checkpoints",
         patience=5,           # epochs of rising val loss before early stop
@@ -81,7 +84,7 @@ def main():
     optimizer = build_optimizer(engine.model, lr=config["lr"],
                                  weight_decay=config["weight_decay"])
     # total_steps = config["num_epochs"] * len(train_loader)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=config["scheduler_patience"], verbose=True)
 
 
     if config["use_compile"]:
