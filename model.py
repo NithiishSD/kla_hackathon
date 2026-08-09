@@ -230,31 +230,35 @@ def build_optimizer(model, lr=2e-4, weight_decay=1e-4):
 
 
 # ---------------------------------------------------------------------------
-# H100 training step (bf16, no GradScaler)
+# Standalone sanity check (run `python model.py` directly). Uses a plain
+# training step with ReduceLROnPlateau, matching what train.py /
+# train_baseline.py / finetune_ssim.py actually use via HardwareEngine --
+# this block does NOT reflect a separate scheduler choice, it's just a
+# quick check that the model/loss/optimizer wire together correctly.
 # ---------------------------------------------------------------------------
-def train_one_step(model, optimizer, criterion, lr_scheduler, input_img, gt_img):
-    optimizer.zero_grad(set_to_none=True)
-    with torch.amp.autocast('cuda', dtype=torch.bfloat16):
-        restored_img = model(input_img)
-        loss = criterion(restored_img, gt_img)
-    loss.backward()
-    optimizer.step()
-    lr_scheduler.step()
-    return loss.item()
-
-
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     model = SemiRestoreNet_V2(dim=64, num_blocks=2, scale_factor=2).to(device)
     criterion = KLAMetrologyLoss().to(device)
     optimizer = build_optimizer(model, lr=2e-4, weight_decay=1e-4)
-    lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=2e-4, total_steps=1000)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
 
     dummy_lr = torch.rand(2, 1, 128, 128, device=device)
     dummy_gt = torch.rand(2, 1, 256, 256, device=device)
 
-    loss_val = train_one_step(model, optimizer, criterion, lr_scheduler, dummy_lr, dummy_gt)
-    print(f"Sanity check step ok. Loss: {loss_val:.4f}")
+    optimizer.zero_grad(set_to_none=True)
+    if device == "cuda":
+        with torch.amp.autocast('cuda', dtype=torch.bfloat16):
+            restored_img = model(dummy_lr)
+            loss = criterion(restored_img, dummy_gt)
+    else:
+        restored_img = model(dummy_lr)
+        loss = criterion(restored_img, dummy_gt)
+    loss.backward()
+    optimizer.step()
+    scheduler.step(loss.item())
+
+    print(f"Sanity check step ok. Loss: {loss.item():.4f}")
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Total params: {n_params / 1e6:.2f}M")
