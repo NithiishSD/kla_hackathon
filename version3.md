@@ -109,9 +109,25 @@ Checkpoint config: {'dim': 64, 'num_blocks': 3, 'batch_size': 4, 'target_batch_s
 
 
 
+the prediction shows both "melted" (over-smoothed) artifacts and a darker / compressed dynamic range problem.
+
+Key Visual Deficiencies
+Melted / Over-Smoothed (Primary Flaw):
+
+High-frequency details—such as fine texturing on garments, line boundaries, and background artwork—are blurred into flat, smooth gradients.
+
+The network is penalizing noise aggressively, but in doing so, it acts as a low-pass filter that destroys sharp structural edges.
+
+Darker & Low Contrast:
+
+Comparing the central arched panels and human figures to the Ground truth, mid-tones are noticeably dimmer and shadow details lack separation.
+
+Local contrast is flattened because the model defaults to safe, conservative intensity averages across regions.
 
 
-starting phase 2 of trainniig with changes in parameter
+
+
+#starting phase 2 of trainniig with changes in parameter
 
 config = dict(
         dim=64,
@@ -130,3 +146,4 @@ config = dict(
         use_compile=False,
         checkpoint_dir="./checkpoints",
     )
+    

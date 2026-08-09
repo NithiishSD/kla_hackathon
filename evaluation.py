@@ -190,7 +190,7 @@ def main():
         save_comparison_plot(
             lr_up[0].numpy(), pred[0].numpy(), gt_img[0].numpy(),
             title=f"{fname} (worst case: PSNR={psnr:.2f}dB, SSIM={ssim:.4f})",
-            out_path=os.path.join(out_dir, f"worst_{fname.replace('.npy','')}.png"),
+            out_path=os.path.join(out_dir, f"worst0_{fname.replace('.npy','')}.png"),
         )
     print(f"\nSaved worst-3 comparison plots to {out_dir}/")
 
