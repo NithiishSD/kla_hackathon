@@ -1,6 +1,8 @@
 env/*
 *.exe
-data/*
+data/test/*
+data/train/*
+
 pycache/*
 *.pyc
 *.pt
