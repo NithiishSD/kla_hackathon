@@ -108,7 +108,7 @@ def main():
 
     data_root = sys.argv[1]
     ckpt_path = sys.argv[2]
-    out_dir = "./eval_outputs"
+    out_dir = "./eval_outputs_baseline"
     os.makedirs(out_dir, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
