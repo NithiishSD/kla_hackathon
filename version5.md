@@ -12,3 +12,7 @@ python evaluate.py ./data ./checkpoints_hard_oversample/best_model.pt
 
 
 complete the validation and packaging process for submission
+
+
+
+so choose baseline model first then phase 2 model avaoid ssim model
