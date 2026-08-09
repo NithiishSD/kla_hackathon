@@ -75,3 +75,40 @@ Saved worst-3 comparison plots to ./eval_outputs_baseline_hardtrained/
 [SEMTestDataset] 400 test samples found.
 Saved 5 test-set prediction visuals to ./eval_outputs_baseline_hardtrained/ (no numeric score possible -- eyeball these for artifacts, especially any known OOD / 'Woven Grid' samples)
 Saved numeric summary to ./eval_outputs_baseline_hardtrained/summary.json
+
+
+Recommended order from here
+Retry the SSIM fine-tune with the controlled config above — this is still your best lever for the bulk of your samples, the earlier failure was a hyperparameter mistake, not evidence the idea is bad.
+2)Set 000352/002982-class samples aside for your main accuracy push — don't let a handful of information-theoretically hard samples eat more of your remaining time chasing PSNR gains that may not be achievable.
+Skip the 80/20 exclusion experiment — you now have a real explanation for the worst cases; changing the split ratio won't change the underlying loss-vs-stochastic-target mismatch.
+Optionally, if time permits: report a trimmed-mean or median PSNR/SSIM alongside the mean in your final writeup, so 2–3 structurally unsolvable samples don't dominate your headline number — with a note explaining why, which reads as rigor, not cherry-picking.
+
+
+
+
+for ( 2)
+
+Concrete next steps
+
+Quantify how much of an outlier this is. Compute per-sample noise std (or SNR estimate: std(LR - GT)) across your whole training set, then rank it. If 000352/002982 sit in the extreme tail (e.g., top 1–2% noise level), that confirms this is a distribution-tail problem, not a fluke — and tells you whether it's one or two isolated cases or a broader class you should be worried about for the KLA test set too.
+Check if the radial degradation pattern shows up on other samples too. If it's systematic across many images (not just this one), that's a real, fixable insight — e.g., feeding the model a normalized radial-distance channel, or checking whether your data augmentation/crop strategy is centering crops in a way that biases training away from edge regions.
+Don't exclude these from train or val. They're legitimate data, and the KLA test set (400 unseen samples) likely contains similarly extreme cases — excluding your hardest known examples to inflate your validation PSNR would make your reported metric less representative of real test performance, not more.
+For your writeup: report a trimmed or percentile-based PSNR/SSIM (e.g. P10/median/P90) alongside the mean, and call out that a small number of extreme low-SNR captures represent a known, expected floor — this is honest, defensible framing rather than something to hide.
+
+
+running the ssim finetune model
+
+1)
+config.update(dict(
+    ssim_weight=0.1,        # small, single new signal — was 0.4
+    lr=1e-5,                # real fine-tune LR, 20x lower — was 1e-4
+    edge_weight=base_cfg["edge_weight"],       # KEEP baseline's 0.5, don't touch
+    weight_decay=base_cfg["weight_decay"],     # KEEP baseline's 1e-4, don't touch
+    freq_weight=0.0,        # still off — isolate one variable
+    num_epochs=15,
+    scheduler_patience=2,
+    early_stop_patience=5,
+    checkpoint_dir="./checkpoints_ssim_v2",
+))
+
+result:

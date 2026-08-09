@@ -52,15 +52,16 @@ def main():
     # Same architecture as the checkpoint -- only the loss changes here.
     config = dict(base_cfg)
     config.update(dict(
-        ssim_weight=0.4,          # NEW for phase 3
-        lr=1e-4,                 # lower LR for fine-tuning, not fresh training
-        weight_decay=1e-5,
-        edge_weight=1.0,
-        num_epochs=15,            # short fine-tune burst, not a full run
-        scheduler_patience=2,
-        early_stop_patience=5,
-        checkpoint_dir="./checkpoints_ssim_finetune",  # separate dir
-    ))
+    ssim_weight=0.1,        # small, single new signal — was 0.4
+    lr=1e-5,                # real fine-tune LR, 20x lower — was 1e-4
+    edge_weight=base_cfg["edge_weight"],       # KEEP baseline's 0.5, don't touch
+    weight_decay=base_cfg["weight_decay"],     # KEEP baseline's 1e-4, don't touch
+    freq_weight=0.0,        # still off — isolate one variable
+    num_epochs=15,
+    scheduler_patience=2,
+    early_stop_patience=5,
+    checkpoint_dir="./checkpoints_ssim_v2",
+))
     print("=== PHASE 3 SSIM FINE-TUNE ===")
     print("Config:", config)
 
