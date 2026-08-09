@@ -1,0 +1,3 @@
+Kick off the baseline run now, to a separate checkpoint folder (so it doesn't overwrite your Phase 2 best_model.pt).
+While that runs, prep and launch the SSIM-loss fine-tune from your existing Phase 2 checkpoint — this is cheap (resumes from where you are, not from scratch) and addresses the real "melting" diagnosis from last round.
+Once both finish, run evaluate.py on all three checkpoints (Phase 2 baseline-config, Phase 2 tuned-config, Phase 3 SSIM fine-tune) against the same held-out val split, so you have one real comparison table for your presentation instead of one number.

@@ -136,14 +136,27 @@ class KLAMetrologyLoss(nn.Module):
     implicitly learned via the pixel/edge losses), add frequency_loss back
     in -- see the commented-out block below."""
 
-    def __init__(self, edge_weight=0.5, freq_weight=0.0):
+    def __init__(self, edge_weight=0.5, freq_weight=0.0, ssim_weight=0.0):
         super().__init__()
         self.edge_weight = edge_weight
         self.freq_weight = freq_weight  # 0.0 by default; set >0 to re-enable
+        self.ssim_weight = ssim_weight  # 0.0 by default; set >0 for Phase 3
         self.register_buffer('sobel_x', torch.tensor(
             [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32).view(1, 1, 3, 3))
         self.register_buffer('sobel_y', torch.tensor(
             [[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32).view(1, 1, 3, 3))
+        # Gaussian window for SSIM -- same construction as evaluate.py's
+        # metric, but used here as a differentiable LOSS term (1 - SSIM),
+        # not just a reported number.
+        self.register_buffer('_ssim_window', self._make_gaussian_window(11, 1.5))
+
+    @staticmethod
+    def _make_gaussian_window(window_size, sigma):
+        coords = torch.arange(window_size, dtype=torch.float32) - window_size // 2
+        g = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
+        g = g / g.sum()
+        window_2d = g.unsqueeze(1) @ g.unsqueeze(0)
+        return window_2d.unsqueeze(0).unsqueeze(0)  # (1, 1, k, k)
 
     def charbonnier_loss(self, pred, target, eps=1e-6):
         return torch.mean(torch.sqrt((pred - target) ** 2 + eps))
@@ -161,12 +174,36 @@ class KLAMetrologyLoss(nn.Module):
         gt_fft = torch.fft.rfft2(target.float(), norm='ortho')
         return F.l1_loss(torch.abs(pred_fft), torch.abs(gt_fft))
 
+    def ssim_loss(self, pred, target, data_range=1.0):
+        """1 - SSIM, forced fp32 like the other frequency/edge terms above --
+        addresses the 'melting'/over-smoothing that pure L1-style losses
+        (Charbonnier) are documented to cause under high noise."""
+        pred_f, target_f = pred.float(), target.float()
+        window = self._ssim_window
+        pad = window.shape[-1] // 2
+        C1 = (0.01 * data_range) ** 2
+        C2 = (0.03 * data_range) ** 2
+
+        mu1 = F.conv2d(pred_f, window, padding=pad)
+        mu2 = F.conv2d(target_f, window, padding=pad)
+        mu1_sq, mu2_sq, mu1_mu2 = mu1 ** 2, mu2 ** 2, mu1 * mu2
+
+        sigma1_sq = F.conv2d(pred_f * pred_f, window, padding=pad) - mu1_sq
+        sigma2_sq = F.conv2d(target_f * target_f, window, padding=pad) - mu2_sq
+        sigma12 = F.conv2d(pred_f * target_f, window, padding=pad) - mu1_mu2
+
+        ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / \
+                   ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
+        return 1.0 - ssim_map.mean()
+
     def forward(self, pred, target):
         l_char = self.charbonnier_loss(pred, target)
         l_edge = self.edge_loss(pred, target)
         loss = l_char + self.edge_weight * l_edge
         if self.freq_weight > 0:
             loss = loss + self.freq_weight * self.frequency_loss(pred, target)
+        if self.ssim_weight > 0:
+            loss = loss + self.ssim_weight * self.ssim_loss(pred, target)
         return loss
 
 
@@ -207,24 +244,17 @@ def train_one_step(model, optimizer, criterion, lr_scheduler, input_img, gt_img)
 
 
 if __name__ == "__main__":
-
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     model = SemiRestoreNet_V2(dim=64, num_blocks=2, scale_factor=2).to(device)
     criterion = KLAMetrologyLoss().to(device)
-    optimizer = build_optimizer(model, lr=2e-4)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    optimizer, 
-    mode='min', 
-    factor=0.5,     # Reduce LR by half
-    patience=3,     # Wait 3 epochs before dropping
-    verbose=True
-)
+    optimizer = build_optimizer(model, lr=2e-4, weight_decay=1e-4)
+    lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=2e-4, total_steps=1000)
 
     dummy_lr = torch.rand(2, 1, 128, 128, device=device)
     dummy_gt = torch.rand(2, 1, 256, 256, device=device)
 
-    loss_val = train_one_step(model, optimizer, criterion, scheduler, dummy_lr, dummy_gt)
+    loss_val = train_one_step(model, optimizer, criterion, lr_scheduler, dummy_lr, dummy_gt)
     print(f"Sanity check step ok. Loss: {loss_val:.4f}")
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Total params: {n_params / 1e6:.2f}M")
