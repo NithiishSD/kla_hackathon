@@ -34,7 +34,7 @@ from model import SemiRestoreNet_V2
 # ---------------------------------------------------------------------
 # ONE-TIME EDIT before submission: point this at your final checkpoint.
 # ---------------------------------------------------------------------
-CHECKPOINT_PATH = "./checkpoints_baseline/best_model.pt"  # <-- EDIT THIS ONCE before submission
+CHECKPOINT_PATH = "./checkpoints_hard_oversample/best_model.pt"  # <-- EDIT THIS ONCE before submission
 
 
 def load_model(checkpoint_path, device):
@@ -94,7 +94,7 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, p_low, p_high, cfg = load_model(CHECKPOINT_PATH, device)
-    model = torch.compile(model)
+    #model = torch.compile(model)
     use_bf16 = device == "cuda" and torch.cuda.get_device_capability(0)[0] >= 8
     t_model_ready = time.time()
 
