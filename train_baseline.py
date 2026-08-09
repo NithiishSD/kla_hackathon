@@ -18,7 +18,7 @@ import time
 
 import torch
 
-from sem_dataset import build_dataloaders
+from sem_dataset import build_dataloaders, load_calib_stats
 from model import SemiRestoreNet_V2, KLAMetrologyLoss, build_optimizer
 from train_engine import HardwareEngine
 
@@ -59,6 +59,11 @@ def main():
         return
 
     os.makedirs(config["checkpoint_dir"], exist_ok=True)
+
+    # CHANGE: load calibration stats once, so they can be baked into every
+    # checkpoint below -- inference (infer.py) then never needs a train/
+    # folder or a separate calib_stats.json alongside the submitted model.
+    p_low, p_high = load_calib_stats(data_root)
 
     train_loader, val_loader, test_loader = build_dataloaders(
         data_root, scale_factor=config["scale_factor"],
@@ -124,7 +129,8 @@ def main():
                           else engine.model.state_dict())
             torch.save({"model_state": state_dict, "config": config,
                         "epoch": epoch, "val_loss": avg_val_loss,
-                        "val_psnr": avg_val_psnr, "lr": new_lr}, ckpt_path)
+                        "val_psnr": avg_val_psnr, "lr": new_lr,
+                        "p_low": p_low, "p_high": p_high}, ckpt_path)
             print(f"  -> new best val_loss, saved to {ckpt_path}")
         else:
             epochs_since_improvement += 1

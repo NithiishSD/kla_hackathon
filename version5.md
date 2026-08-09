@@ -1,0 +1,1 @@
+Three pieces: (1) bake calibration stats into checkpoints going forward, (2) a one-time patch script so your existing baseline checkpoint doesn't need a retrain just to gain this, (3) the actual infer.py matching the required contract.
