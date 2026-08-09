@@ -132,7 +132,7 @@ def main():
 
     data_root = sys.argv[1]
     ckpt_path = sys.argv[2]
-    out_dir = "./eval_outputs_baseline_hardtrained"
+    out_dir = "./eval_outputs_baseline_hardtrained"  # save plots + summary here
     os.makedirs(out_dir, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"

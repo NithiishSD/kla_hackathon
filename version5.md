@@ -192,3 +192,111 @@ config.update(dict(
 ))
 
 result:
+
+
+
+--- [Compute] DataLoader batch_size=4, target_batch_size=32 -> accum_steps=8 (actual effective batch = 32) ---
+[SSIM-FT] Epoch 1/15 [117.7s] [LR: 1.00e-05] train_loss=0.1912 val_loss=0.2616 val_psnr=21.65dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+[SSIM-FT] Epoch 2/15 [116.6s] [LR: 1.00e-05] train_loss=0.2287 val_loss=0.1984 val_psnr=22.78dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+[SSIM-FT] Epoch 3/15 [116.6s] [LR: 1.00e-05] train_loss=0.1915 val_loss=0.1786 val_psnr=23.22dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+[SSIM-FT] Epoch 4/15 [116.6s] [LR: 1.00e-05] train_loss=0.1788 val_loss=0.1705 val_psnr=23.38dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+[SSIM-FT] Epoch 5/15 [116.7s] [LR: 1.00e-05] train_loss=0.1710 val_loss=0.1635 val_psnr=23.57dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+[SSIM-FT] Epoch 6/15 [116.7s] [LR: 1.00e-05] train_loss=0.1643 val_loss=0.1579 val_psnr=23.68dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+[SSIM-FT] Epoch 7/15 [116.7s] [LR: 1.00e-05] train_loss=0.1588 val_loss=0.1523 val_psnr=23.87dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+[SSIM-FT] Epoch 8/15 [116.7s] [LR: 1.00e-05] train_loss=0.1540 val_loss=0.1487 val_psnr=23.95dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+[SSIM-FT] Epoch 9/15 [116.7s] [LR: 1.00e-05] train_loss=0.1504 val_loss=0.1456 val_psnr=24.04dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+[SSIM-FT] Epoch 10/15 [116.7s] [LR: 1.00e-05] train_loss=0.1476 val_loss=0.1425 val_psnr=24.18dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+[SSIM-FT] Epoch 11/15 [116.7s] [LR: 1.00e-05] train_loss=0.1454 val_loss=0.1408 val_psnr=24.21dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+[SSIM-FT] Epoch 12/15 [116.7s] [LR: 1.00e-05] train_loss=0.1436 val_loss=0.1397 val_psnr=24.21dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+[SSIM-FT] Epoch 13/15 [116.7s] [LR: 1.00e-05] train_loss=0.1422 val_loss=0.1383 val_psnr=24.22dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+[SSIM-FT] Epoch 14/15 [116.7s] [LR: 1.00e-05] train_loss=0.1411 val_loss=0.1374 val_psnr=24.23dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+[SSIM-FT] Epoch 15/15 [116.7s] [LR: 1.00e-05] train_loss=0.1403 val_loss=0.1374 val_psnr=24.15dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v2/best_model.pt
+
+/home/nithiish/Documents/kla_hackathon/.conda) nithiish@nithiish-pc:~/Documents/kla_hackathon$ python evaluation.py ./data ./checkpoints_ssim_v2/best_model.pt
+Using device: cuda
+Loaded checkpoint from epoch 15, val_loss=0.1374, val_psnr=24.15dB (as recorded during training)
+Checkpoint config: {'dim': 64, 'num_blocks': 2, 'batch_size': 4, 'target_batch_size': 32, 'scale_factor': 2, 'edge_weight': 0.5, 'freq_weight': 0.0, 'ssim_weight': 0.1, 'lr': 1e-05, 'weight_decay': 0.0001, 'scheduler_patience': 2, 'early_stop_patience': 5, 'num_workers': 8, 'num_epochs': 15, 'use_compile': False, 'checkpoint_dir': './checkpoints_ssim_v2'}
+Loading LPIPS (AlexNet backbone)...
+Setting up [LPIPS] perceptual loss: trunk [alex], v[0.1], spatial [off]
+/home/nithiish/Documents/kla_hackathon/.conda/lib/python3.12/site-packages/torchvision/models/_utils.py:207: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+/home/nithiish/Documents/kla_hackathon/.conda/lib/python3.12/site-packages/torchvision/models/_utils.py:222: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=AlexNet_Weights.IMAGENET1K_V1`. You can also use `weights=AlexNet_Weights.DEFAULT` to get the most up-to-date weights.
+  warnings.warn(msg)
+Loading model from: /home/nithiish/Documents/kla_hackathon/.conda/lib/python3.12/site-packages/lpips/weights/v0.1/alex.pth
+[SEMPairDataset] 3200 paired samples found.
+
+Evaluating on 320 held-out validation samples...
+
+=== Validation set summary (n=320) ===
+PSNR: mean=25.42dB  std=4.33  min=12.44  max=44.19
+SSIM: mean=0.5967  std=0.2091  min=0.1328  max=0.9544
+LPIPS: mean=0.3050  std=0.1699  min=0.0387  max=0.8620  (lower = more perceptually similar; AlexNet backbone trained on natural photos, treat as directional for SEM data, not an absolute validated benchmark)
+
+Worst 5 samples by PSNR (your weakest cases -- inspect these):
+  002982.npy: PSNR=12.44dB, SSIM=0.2982, LPIPS=0.4730
+  001908.npy: PSNR=18.57dB, SSIM=0.4421, LPIPS=0.4123
+  000398.npy: PSNR=18.93dB, SSIM=0.1612, LPIPS=0.8204
+  001927.npy: PSNR=18.95dB, SSIM=0.1397, LPIPS=0.8162
+  000397.npy: PSNR=19.28dB, SSIM=0.1426, LPIPS=0.7493
+
+Best 5 samples by PSNR:
+  000823.npy: PSNR=38.13dB, SSIM=0.9286, LPIPS=0.1039
+  003117.npy: PSNR=39.53dB, SSIM=0.9274, LPIPS=0.2226
+  002217.npy: PSNR=39.94dB, SSIM=0.9544, LPIPS=0.0494
+  002225.npy: PSNR=42.42dB, SSIM=0.9487, LPIPS=0.0844
+  001827.npy: PSNR=44.19dB, SSIM=0.9517, LPIPS=0.0387
+
+Saved worst-3 comparison plots to ./eval_outputs_ssim_v2/
+
+=== Named difficulty samples (from your diagnostic plots) ===
+  000218.npy [TRAIN (model saw this during training)]: PSNR=23.13dB, SSIM=0.5165
+    (in training set -- this number reflects fit, not generalization; don't present it as a held-out result -- but a LOW score here despite training on it is still worth investigating, it suggests the sample itself is unusually hard or possibly anomalous data)
+  000352.npy [TRAIN (model saw this during training)]: PSNR=12.54dB, SSIM=0.3043
+    (in training set -- this number reflects fit, not generalization; don't present it as a held-out result -- but a LOW score here despite training on it is still worth investigating, it suggests the sample itself is unusually hard or possibly anomalous data)
+  000425.npy [TRAIN (model saw this during training)]: PSNR=33.87dB, SSIM=0.8842
+    (in training set -- this number reflects fit, not generalization; don't present it as a held-out result -- but a LOW score here despite training on it is still worth investigating, it suggests the sample itself is unusually hard or possibly anomalous data)
+
+=== Test set (no ground truth -- visuals only, no PSNR/SSIM) ===
+[SEMTestDataset] 400 test samples found.
+Saved 5 test-set prediction visuals to ./eval_outputs_ssim_v2/ (no numeric score possible -- eyeball these for artifacts, especially any known OOD / 'Woven Grid' samples)
+Saved numeric summary to ./eval_outputs_ssim_v2/summary.json
+
+
+
+
+
+test2)
+
+
+chenging ssim back to zero and running for extra 15 epochs:
+
+
+
+result:
+
+
+
+
+
+
+
+
+
+
+
+now running teh ssim from scratch:
