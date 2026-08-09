@@ -132,7 +132,7 @@ def main():
 
     data_root = sys.argv[1]
     ckpt_path = sys.argv[2]
-    out_dir = "./eval_outputs"
+    out_dir = "./eval_outputs_baseline_hardtrained"
     os.makedirs(out_dir, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -165,7 +165,7 @@ def main():
     # val_fraction) so this is genuinely the held-out set, not train data.
     full_train = SEMPairDataset(
         gt_dir=os.path.join(data_root, "train", "gt"),
-        lr_dir=os.path.join(data_root, "train", "lossylr"),
+        lr_dir=os.path.join(data_root, "train", "NoisyLR"),
         p_low=p_low, p_high=p_high,
         scale_factor=cfg["scale_factor"], augment=False,
     )

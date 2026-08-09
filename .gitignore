@@ -7,3 +7,4 @@ pycache/*
 *.pyc
 *.pt
 checkpoints/*
+test_results/*
