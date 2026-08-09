@@ -96,6 +96,86 @@ Don't exclude these from train or val. They're legitimate data, and the KLA test
 For your writeup: report a trimmed or percentile-based PSNR/SSIM (e.g. P10/median/P90) alongside the mean, and call out that a small number of extreme low-SNR captures represent a known, expected floor — this is honest, defensible framing rather than something to hide.
 
 
+— this file resolves the mystery, and it's not a split mismatch after all. Splits match exactly (val_fraction=0.1, seed=42, same SEMPairDataset construction, same files) between build_dataloaders and evaluate.py's manual reconstruction. The real cause is a metric computation difference.
+
+The actual bug: batch-averaged PSNR vs per-image-averaged PSNR
+
+Look at how PSNR gets computed during training:
+
+python
+for lr_img, gt_img in val_loader:
+    loss, pred = engine.eval_step(criterion, lr_img, gt_img)
+    val_psnrs.append(compute_psnr(pred, gt_img.to(engine.device)))
+avg_val_psnr = sum(val_psnrs) / len(val_psnrs)
+
+pred and gt_img here are a whole batch (batch_size=4). Inside compute_psnr:
+
+python
+mse = torch.mean((pred - target) ** 2)   # averages over ALL 4 images in the batch at once
+return 10 * torch.log10(1.0 / mse)        # ONE psnr value for the whole batch
+
+So the training loop computes one PSNR per batch of 4 images, then averages those batch-level PSNR values across batches.
+
+evaluate.py, by contrast, loops one image at a time and averages individual per-image PSNR values.
+
+These are mathematically different quantities, and not just by a rounding error. PSNR is -10·log10(MSE), a concave function of MSE. By Jensen's inequality, when MSE varies across images (which it clearly does — your std is 4.57dB), averaging MSE first (across a batch) then taking one log will always come out lower than averaging individually-computed PSNR values. A single noisy/hard image in a batch of 4 drags down that whole batch's blended MSE heavily, and that batch then reports one low PSNR — whereas in the per-image approach, that same hard image just contributes one low number among many, without contaminating its batch-mates' scores.
+
+This exactly explains the direction and rough size of every discrepancy you've seen:
+
+Hard-oversample checkpoint: training log said val_psnr=27.87dB → evaluate.py said mean 29.41dB (+1.5dB)
+Baseline checkpoint: training log said val_psnr=27.85dB → your earlier three-way table said 29.37dB via evaluate.py (+1.5dB, same size gap)
+
+Consistent ~1.5dB bias, both times, same direction. That's not noise — that's the batching artifact.
+
+What this means practically
+Your past comparisons are still valid. Baseline vs Phase 2 vs hard-oversample were all compared via evaluate.py's per-image numbers, consistently. Nothing to redo there.
+In-training val_psnr logs (what you're watching right now during the SSIM run) are self-consistent with each other, just biased low vs. evaluate.py. Epoch 1→4 going 21.65→23.38dB is real, legitimate recovery-in-progress — just don't compare that 23.38dB directly against evaluate.py's 29.37dB baseline number. Compare it against the training log's own resumed starting point (27.85dB, same metric) — so it's still ~4.5dB below where it started, recovering but not there yet.
+When this run finishes, run evaluate.py on the resulting checkpoint — that's the only number to trust for your final PSNR comparison against baseline's 29.37dB / hard-oversample's 29.41dB.
+
+Step 1 (do this first): re-run the SSIM fine-tune, corrected
+
+Your last attempt failed because too much changed at once (ssim_weight 0→0.4, edge_weight 0.5→1.0, lr only halved). Fix all three:
+
+python
+config.update(dict(
+    ssim_weight=0.1,        # small, single new signal — was 0.4
+    lr=1e-5,                # real fine-tune LR, 20x lower — was 1e-4
+    edge_weight=base_cfg["edge_weight"],       # KEEP baseline's 0.5, don't touch
+    weight_decay=base_cfg["weight_decay"],     # KEEP baseline's 1e-4, don't touch
+    freq_weight=0.0,        # still off — isolate one variable
+    num_epochs=15,
+    scheduler_patience=2,
+    early_stop_patience=5,
+    checkpoint_dir="./checkpoints_ssim_v2",
+))
+
+And change the resume source in the script to your baseline checkpoint:
+
+bash
+python finetune_ssim.py ./data ./checkpoints_baseline/best_model.pt
+
+What to watch for: if val_psnr in epoch 1-2 stays close to baseline's 29.37dB (not collapsing like last time), you know the fine-tune is stable. If it's still unstable even at lr=1e-5, drop to 5e-6 next.
+
+Then run evaluate.py on the resulting checkpoint and compare against baseline using the same percentile/tail breakdown I ran last message — not just the mean, since that's what actually tells you if it helped the tail.
+
+Step 2: only if Step 1 succeeds, consider freq_weight
+
+Your FourierUnit is running in every block but getting no direct supervision (freq_weight=0.0). If Step 1 gives a clean, stable checkpoint, do one more single-variable fine-tune from that checkpoint adding freq_weight=0.05–0.1, everything else pinned. Don't do this simultaneously with Step 1 — you want to know which change did what.
+
+Direct answer: don't do hard-oversampling on the SSIM model — not yet, and possibly not at all
+
+Here's the reasoning, not just the verdict:
+
+You already tested oversampling in isolation and it did nothing (std 4.55→4.57, statistically flat). There's no new evidence to suggest it'll behave differently on top of a different loss — running it again without a reason to expect a different outcome is just spending a training run to confirm what you already know.
+It would also break your ablation discipline. If you stack oversampling on top of a new SSIM-tuned model and something changes, you won't know whether it was the SSIM loss, the oversampling, or their interaction. You've been doing single-variable changes well so far — keep that up.
+If Step 1 succeeds and you still see a stubborn tail (the ~57 sub-25dB samples), the right move isn't to oversample blindly again — it's to re-score hard samples using the new SSIM-tuned model (the hard set may have shifted, since SSIM loss changes what "hard" means) and only then decide if oversampling is worth a third try, now with a specific, falsifiable hypothesis rather than a repeat.
+Summary of what to run, in order
+Priority	Action	Change vs last known-good	Expected outcome to check
+1	SSIM fine-tune v2, from baseline ckpt	ssim_weight=0.1, lr=1e-5 only	val_psnr stays near 29.3-29.5dB, SSIM improves, no collapse
+2 (conditional)	Add freq_weight=0.05-0.1, from Step 1's ckpt	one more single variable	small further SSIM/PSNR gain, or no change (also useful info)
+3 (only if tail persists)	Re-score hard samples on best model, decide fresh	new hypothesis, not a repeat	—
+
+
 running the ssim finetune model
 
 1)
