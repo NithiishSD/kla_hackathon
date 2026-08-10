@@ -50,7 +50,24 @@ def main():
           f"(epoch {ckpt['epoch']+1}, val_psnr={ckpt['val_psnr']:.2f}dB)")
 
     # Same architecture as the checkpoint -- only the loss changes here.
-    config = dict(base_cfg)
+    config = dict(
+            dim=64,
+            num_blocks=2,            # CHANGE vs Phase 2: safe default, not 3
+            batch_size=4,
+            target_batch_size=32,
+            scale_factor=2,
+            edge_weight=0.5,         # CHANGE vs Phase 2: safe default, not 0.8
+            freq_weight=0.0,         # CHANGE vs Phase 2: off, not 0.15
+            ssim_weight=0.0,
+            lr=2e-4,
+            weight_decay=1e-4,       # CHANGE vs Phase 2: safe default, not 5e-4
+            scheduler_patience=3,
+            early_stop_patience=7,
+            num_workers=min(8, os.cpu_count() or 1),
+            num_epochs=50,
+            use_compile=False,
+            checkpoint_dir="./checkpoints_baseline_v2",  # separate from Phase 2
+        )
 #     config.update(dict(
 #     num_blocks=3,  # keep same architecture
 #     ssim_weight=0.8,        # small, single new signal — was 0.4
@@ -63,6 +80,7 @@ def main():
 #     early_stop_patience=5,
 #     checkpoint_dir="./checkpoints_ssim_v4",
 # ))
+
     print("=== baseline FINE-TUNE ===")
     print("Config:", config)
 
