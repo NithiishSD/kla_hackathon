@@ -132,7 +132,7 @@ def main():
 
     data_root = sys.argv[1]
     ckpt_path = sys.argv[2]
-    out_dir = "./eval_outputs_baseline_hardtrained"  # save plots + summary here
+    out_dir = "./eval_outputs_ssim_scratch"  # save plots + summary here
     os.makedirs(out_dir, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -142,7 +142,7 @@ def main():
     ckpt = torch.load(ckpt_path, map_location=device)
     cfg = ckpt["config"]
     print(f"Loaded checkpoint from epoch {ckpt['epoch']+1}, "
-          f"val_loss={ckpt['val_loss']:.4f}, val_psnr={ckpt['val_psnr']:.2f}dB "
+          f"val_loss=-, val_psnr={ckpt['val_psnr']:.2f}dB "
           f"(as recorded during training)")
     print(f"Checkpoint config: {cfg}")
 

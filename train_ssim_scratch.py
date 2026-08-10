@@ -72,7 +72,7 @@ def main():
                                  weight_decay=config["weight_decay"])
     
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=config["scheduler_patience"], verbose=True
+        optimizer, mode='min', factor=0.5, patience=config["scheduler_patience"]
     )
 
     best_val_loss = float('inf')
@@ -117,12 +117,9 @@ def main():
             best_val_loss = avg_val_loss
             epochs_since_improvement = 0
             ckpt_path = os.path.join(config["checkpoint_dir"], "best_model.pt")
-            torch.save({
-                "model_state": engine.model.state_dict(),
-                "config": config,
-                "epoch": epoch,
-                "val_psnr": avg_val_psnr
-            }, ckpt_path)
+            torch.save({"model_state": engine.model.state_dict(), "config": config,
+                                    "epoch": epoch, "val_loss": avg_val_loss,
+                                    "val_psnr": avg_val_psnr, "lr": new_lr}, ckpt_path) 
             print(f"  -> saved new best model ({avg_val_psnr:.2f}dB)")
         else:
             epochs_since_improvement += 1

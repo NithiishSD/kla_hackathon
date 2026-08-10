@@ -290,8 +290,75 @@ chenging ssim back to zero and running for extra 15 epochs:
 result:
 
 
+better but the ssim is low still need improment
 
 
+validate this (/home/nithiish/Documents/kla_hackathon/.conda)
+nithiish@nithiish-pc:~/Documents/kla_hackathon$ python evaluation.py ./data
+./checkpoints_ssim_v3/best_mod el.pt Using device: cuda Loaded checkpoint from
+epoch 14, val_loss=0.0777, val_psnr=27.88dB (as recorded during training)
+Checkpoint config: {'dim': 64, 'num_blocks': 2, 'batch_size': 4,
+'target_batch_size': 32, 'scale_factor': 2, 'edge_weight': 0.5,
+'freq_weight': 0.0, 'ssim_weight': 0.0, 'lr': 0.0001, 'weight_decay': 0.0001,
+'scheduler_patience': 2, 'early_stop_patience': 5, 'num_workers': 8,
+'num_epochs': 15, 'use_compile': False, 'checkpoint_dir':
+'./checkpoints_ssim_v3'} Loading LPIPS (AlexNet backbone)... Setting up [LPIPS]
+perceptual loss: trunk [alex], v[0.1], spatial [off]
+/home/nithiish/Documents/kla_hackathon/.conda/lib/python3.12/site-packages/torchvision/models/_utils.py:207:
+UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be
+removed in the future, please use 'weights' instead. warnings.warn(
+/home/nithiish/Documents/kla_hackathon/.conda/lib/python3.12/site-packages/torchvision/models/_utils.py:222:
+UserWarning: Arguments other than a weight enum or None for 'weights' are
+deprecated since 0.13 and may be removed in the future. The current behavior is
+equivalent to passing weights=AlexNet_Weights.IMAGENET1K_V1. You can also use
+weights=AlexNet_Weights.DEFAULT to get the most up-to-date weights.
+warnings.warn(msg) Loading model from:
+/home/nithiish/Documents/kla_hackathon/.conda/lib/python3.12/site-packages/lpips/weights/v0.1/alex.pth
+[SEMPairDataset] 3200 paired samples found.
+
+Evaluating on 320 held-out validation samples...
+
+=== Validation set summary (n=320) === PSNR: mean=29.42dB std=4.59 min=12.47
+max=45.79 SSIM: mean=0.7835 std=0.1472 min=0.3014 max=0.9739 LPIPS: mean=0.2384
+std=0.1289 min=0.0286 max=0.7361 (lower = more perceptually similar; AlexNet
+backbone trained on natural photos, treat as directional for SEM data, not an
+absolute validated benchmark)
+
+Worst 5 samples by PSNR (your weakest cases -- inspect these): 002982.npy:
+PSNR=12.47dB, SSIM=0.3082, LPIPS=0.3812 001908.npy: PSNR=19.57dB, SSIM=0.4262,
+LPIPS=0.4553 001387.npy: PSNR=20.47dB, SSIM=0.7964, LPIPS=0.0928 000108.npy:
+PSNR=20.49dB, SSIM=0.6711, LPIPS=0.2439 001386.npy: PSNR=20.60dB, SSIM=0.8023,
+LPIPS=0.0883
+
+Best 5 samples by PSNR: 001082.npy: PSNR=39.72dB, SSIM=0.9434, LPIPS=0.0923
+002217.npy: PSNR=40.44dB, SSIM=0.9611, LPIPS=0.0718 003117.npy: PSNR=42.31dB,
+SSIM=0.9604, LPIPS=0.0717 002225.npy: PSNR=43.39dB, SSIM=0.9650, LPIPS=0.1225
+001827.npy: PSNR=45.79dB, SSIM=0.9682, LPIPS=0.0388
+
+Saved worst-3 comparison plots to ./eval_outputs_ssim_v3/
+
+=== Named difficulty samples (from your diagnostic plots) === 000218.npy [TRAIN
+(model saw this during training)]: PSNR=32.05dB, SSIM=0.8527 (in training set --
+this number reflects fit, not generalization; don't present it as a held-out
+result -- but a LOW score here despite training on it is still worth
+investigating, it suggests the sample itself is unusually hard or possibly
+anomalous data) 000352.npy [TRAIN (model saw this during training)]:
+PSNR=12.58dB, SSIM=0.3144 (in training set -- this number reflects fit, not
+generalization; don't present it as a held-out result -- but a LOW score here
+despite training on it is still worth investigating, it suggests the sample
+itself is unusually hard or possibly anomalous data) 000425.npy [TRAIN (model
+saw this during training)]: PSNR=34.58dB, SSIM=0.8935 (in training set -- this
+number reflects fit, not generalization; don't present it as a held-out result
+-- but a LOW score here despite training on it is still worth investigating, it
+suggests the sample itself is unusually hard or possibly anomalous data)
+
+=== Test set (no ground truth -- visuals only, no PSNR/SSIM) ===
+[SEMTestDataset] 400 test samples found. Saved 5 test-set prediction visuals to
+./eval_outputs_ssim_v3/ (no numeric score possible -- eyeball these for
+artifacts, especially any known OOD / 'Woven Grid' samples) Saved numeric
+summary to ./eval_outputs_ssim_v3/summary.json
+
+Done. All outputs in ./eval_outputs_ssim_v3/
 
 
 
@@ -300,3 +367,92 @@ result:
 
 
 now running teh ssim from scratch:
+
+
+(/home/nithiish/Documents/kla_hackathon/.conda) nithiish@nithiish-pc:~/Documents/kla_hackathon$ python evaluation.py ./data ./checkpoints_scratch_ssim/best_model.pt
+Using device: cuda
+Loaded checkpoint from epoch 29, val_loss=-, val_psnr=23.95dB (as recorded during training)
+Checkpoint config: {'dim': 64, 'num_blocks': 2, 'scale_factor': 2, 'edge_weight': 0.5, 'ssim_weight': 0.1, 'freq_weight': 0.0, 'lr': 0.0002, 'weight_decay': 0.0001, 'batch_size': 4, 'target_batch_size': 32, 'num_epochs': 60, 'scheduler_patience': 3, 'early_stop_patience': 8, 'checkpoint_dir': './checkpoints_scratch_ssim'}
+Loading LPIPS (AlexNet backbone)...
+Setting up [LPIPS] perceptual loss: trunk [alex], v[0.1], spatial [off]
+/home/nithiish/Documents/kla_hackathon/.conda/lib/python3.12/site-packages/torchvision/models/_utils.py:207: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+/home/nithiish/Documents/kla_hackathon/.conda/lib/python3.12/site-packages/torchvision/models/_utils.py:222: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=AlexNet_Weights.IMAGENET1K_V1`. You can also use `weights=AlexNet_Weights.DEFAULT` to get the most up-to-date weights.
+  warnings.warn(msg)
+Loading model from: /home/nithiish/Documents/kla_hackathon/.conda/lib/python3.12/site-packages/lpips/weights/v0.1/alex.pth
+[SEMPairDataset] 3200 paired samples found.
+
+Evaluating on 320 held-out validation samples...
+
+=== Validation set summary (n=320) ===
+PSNR: mean=25.20dB  std=4.30  min=12.03  max=43.00
+SSIM: mean=0.5976  std=0.2064  min=0.1366  max=0.9619
+LPIPS: mean=0.3547  std=0.2021  min=0.0262  max=0.9663  (lower = more perceptually similar; AlexNet backbone trained on natural photos, treat as directional for SEM data, not an absolute validated benchmark)
+
+Worst 5 samples by PSNR (your weakest cases -- inspect these):
+  002982.npy: PSNR=12.03dB, SSIM=0.2619, LPIPS=0.9176
+  000398.npy: PSNR=18.91dB, SSIM=0.1578, LPIPS=0.9341
+  001927.npy: PSNR=18.91dB, SSIM=0.1366, LPIPS=0.9264
+  001387.npy: PSNR=19.00dB, SSIM=0.6615, LPIPS=0.1757
+  002483.npy: PSNR=19.01dB, SSIM=0.1582, LPIPS=0.7016
+
+Best 5 samples by PSNR:
+  000823.npy: PSNR=38.24dB, SSIM=0.9261, LPIPS=0.1029
+  003117.npy: PSNR=38.61dB, SSIM=0.9260, LPIPS=0.2213
+  002217.npy: PSNR=39.70dB, SSIM=0.9480, LPIPS=0.0666
+  002225.npy: PSNR=41.77dB, SSIM=0.9536, LPIPS=0.0922
+  001827.npy: PSNR=43.00dB, SSIM=0.9561, LPIPS=0.0262
+
+Saved worst-3 comparison plots to ./eval_outputs_ssim_scratch/
+
+=== Named difficulty samples (from your diagnostic plots) ===
+  000218.npy [TRAIN (model saw this during training)]: PSNR=22.44dB, SSIM=0.5147
+    (in training set -- this number reflects fit, not generalization; don't present it as a held-out result -- but a LOW score here despite training on it is still worth investigating, it suggests the sample itself is unusually hard or possibly anomalous data)
+  000352.npy [TRAIN (model saw this during training)]: PSNR=12.13dB, SSIM=0.2660
+    (in training set -- this number reflects fit, not generalization; don't present it as a held-out result -- but a LOW score here despite training on it is still worth investigating, it suggests the sample itself is unusually hard or possibly anomalous data)
+  000425.npy [TRAIN (model saw this during training)]: PSNR=33.98dB, SSIM=0.8879
+    (in training set -- this number reflects fit, not generalization; don't present it as a held-out result -- but a LOW score here despite training on it is still worth investigating, it suggests the sample itself is unusually hard or possibly anomalous data)
+
+=== Test set (no ground truth -- visuals only, no PSNR/SSIM) ===
+[SEMTestDataset] 400 test samples found.
+Saved 5 test-set prediction visuals to ./eval_outputs_ssim_scratch/ (no numeric score possible -- eyeball these for artifacts, especially any known OOD / 'Woven Grid' samples)
+Saved numeric summary to ./eval_outputs_ssim_scratch/summary.json
+
+Done. All outputs in ./eval_outputs_ssim_scratch/
+
+
+
+
+
+also proposed the change in dim of model to increse teh size along with use of synthetic augu
+
+also
+#Downsampled Fourier branch
+
+What it does (The "Multi-Scale Frequency" Concept)
+In our current FourierUnit, we perform a Fast Fourier Transform (FFT) on the full 128x128 feature map.
+Current Workflow: Input (128x128) → FFT → Frequency Mixing → IFFT → Output (128x128).
+Downsampled Workflow: Input (128x128) → Average Pool (64x64) → FFT → Frequency Mixing → IFFT → Bilinear Upsample (128x128) → Output.
+2. How it helps the Existing Model
+A. Computational Complexity (The Speed Win)
+The 2D-FFT has a complexity of 
+O
+(
+N
+2
+log
+⁡
+N
+)
+O(N 
+2
+ logN)
+.
+By downsampling from 128x128 to 64x64, we reduce the number of pixels by 4x.
+In practice, this makes the Fourier branch nearly 3x to 5x faster on your RTX 4050 and the H100. If the hackathon judges prioritize "Images Per Second," this is your strongest lever.
+B. Semantic Regularization (The Accuracy Win)
+In semiconductor scans, Scan-line Noise (periodic streaks) and Global Haze (blur) are low-to-mid frequency artifacts.
+The Problem: When we do FFT at full resolution, the branch tries to process high-frequency edges. This can cause "Ringing Artifacts" or "Waviness" around the sharp silicon lines.
+The Solution: By downsampling, we force the Fourier branch to be a "Low-Frequency Specialist." It focuses entirely on the global noise signatures and the "haze," while leaving the high-frequency "Edge Reconstruction" to the Spatial MDTA branch. This "Separation of Concerns" usually improves SSIM.
+C. VRAM Headroom
+On your 6GB RTX 4050, this saves significant memory. This headroom allows you to increase the dim (e.g., from 64 to 96) or add an extra block, which does improve accuracy.
