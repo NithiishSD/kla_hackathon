@@ -51,19 +51,19 @@ def main():
 
     # Same architecture as the checkpoint -- only the loss changes here.
     config = dict(base_cfg)
-    config.update(dict(
-    num_blocks=3,  # keep same architecture
-    ssim_weight=0.8,        # small, single new signal — was 0.4
-    lr=5e-5,                # real fine-tune LR, 20x lower — was 1e-4
-    edge_weight=1.5,       # KEEP baseline's 0.5, don't touch
-    weight_decay=1e-6,     # KEEP baseline's 1e-4, don't touch
-    freq_weight=0.15,        # still off — isolate one variable
-    num_epochs=20,
-    scheduler_patience=2,
-    early_stop_patience=5,
-    checkpoint_dir="./checkpoints_ssim_v4",
-))
-    print("=== PHASE 3 SSIM FINE-TUNE ===")
+#     config.update(dict(
+#     num_blocks=3,  # keep same architecture
+#     ssim_weight=0.8,        # small, single new signal — was 0.4
+#     lr=5e-5,                # real fine-tune LR, 20x lower — was 1e-4
+#     edge_weight=1.5,       # KEEP baseline's 0.5, don't touch
+#     weight_decay=1e-6,     # KEEP baseline's 1e-4, don't touch
+#     freq_weight=0.15,        # still off — isolate one variable
+#     num_epochs=20,
+#     scheduler_patience=2,
+#     early_stop_patience=5,
+#     checkpoint_dir="./checkpoints_ssim_v4",
+# ))
+    print("=== baseline FINE-TUNE ===")
     print("Config:", config)
 
     os.makedirs(config["checkpoint_dir"], exist_ok=True)

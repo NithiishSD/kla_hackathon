@@ -49,7 +49,7 @@ def main():
         num_workers=min(8, os.cpu_count() or 1),
         num_epochs=50,
         use_compile=False,
-        checkpoint_dir="./checkpoints_baseline",  # separate from Phase 2
+        checkpoint_dir="./checkpoints_baseline_v2",  # separate from Phase 2
     )
     print("=== BASELINE ABLATION RUN ===")
     print("Config:", config)

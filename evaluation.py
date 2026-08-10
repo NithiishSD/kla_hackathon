@@ -102,7 +102,7 @@ def main():
     ckpt = torch.load(ckpt_path, map_location=device)
     cfg = ckpt["config"]
     model = SemiRestoreNet_V2(dim=cfg["dim"], num_blocks=cfg["num_blocks"], scale_factor=cfg["scale_factor"]).to(device)
-    model.load_state_dict(ckpt["model_state"])
+    model.load_state_dict(ckpt["model_state"],strict=False)
     model.eval()
 
     lpips_model = lpips.LPIPS(net='alex').to(device) if _LPIPS_AVAILABLE else None

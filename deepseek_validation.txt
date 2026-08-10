@@ -1,0 +1,92 @@
+1. Validation of Current State: The Critical Diagnosis
+Your model is not just denoising; it's trying to solve a super-resolution problem (128->256) and a deblurring problem simultaneously, with extreme noise. The scorecard tells a clear story.
+
+The Good:
+
+Structural Recovery: The SSIM of 0.7835 and PSNR of 29.42 dB on 320 held-out samples is a strong baseline, confirming the Restormer backbone is powerful.
+
+Phase 3 Fine-Tune Worked: The SSIM-focused phase did improve structural sharpness, as intended.
+
+High Performers are Excellent: PSNRs of 40-45 dB prove that for "standard" samples, the model's fundamental capacity is more than sufficient. The architecture itself is not the primary limit.
+
+The Bad (The Core Problem):
+
+CD Bias is Catastrophic: A bias of -14.74 pixels is the single biggest failure. This means your model is systematically shrinking critical dimensions (lines). The model is "eating" the edges to get a cleaner, less noisy result, which is exactly what you penalize with the Sobel loss, but the penalty weight isn't high enough or is being overpowered by the fidelity losses. This makes the model useless as a metrology tool. The SSIM loss might even be encouraging this by slightly smoothing the edge transition zone to improve local covariance.
+
+LER/LWR Error is Severe: An error of ~23-26 pixels on roughness metrics is linked to the CD bias. If you can't find the correct edge position (CD bias), you can't measure its roughness (LER) correctly. The "melting" of edges directly destroys LER signal.
+
+High Variance in Performance: The gap between your best sample (45.79 dB) and worst (12.47 dB) is a chasm of >33 dB. The worst-case samples are not just bad; they are failed reconstructions. This points to a failure of the global calibration to handle the specific noise distribution or topology of those outliers. Look at sample 002982.npy with an SSIM of 0.3082; the model has essentially hallucinated the wrong geometry.
+
+The metrology_gain parameter was correctly initialized to 1.0, but it's clearly not solving the CD bias on its own. The model has found a loss landscape that strongly favors smoothness over edge positional accuracy.
+
+2. Prioritized Action Plan to Achieve Best Results
+Your immediate goal is not a new architecture. It is to crush the CD Bias from -14.74 px to near zero. We will do this by introducing a brutally effective, physically-motivated loss function.
+
+Priority 1 (Immediate, High Impact): The CD-Aware Edge Loss
+The Sobel-edge penalty is too naive. It says "have edges," but it doesn't say "have edges in the exact right location." We need a loss that forces the model to align the 50% intensity threshold perfectly.
+
+Action: Implement a Thresholded Proximity Loss. Replace or significantly augment your current Sobel loss with this concept. You cannot write this as a simple one-liner; you must code a custom loss function.
+
+The Algorithm:
+For the predicted image I_pred and ground truth I_gt:
+
+Global Threshold Normalization: To handle global intensity shifts, standardize both images using the same robust statistics (e.g., the 5th and 95th percentiles of the ground truth image alone, or your global anchors) so that 0.0 is "trench" and 1.0 is "line".
+
+Binary Edge Extraction: Create binary masks of the 'up' and 'down' edges. Don't use Sobel magnitude. Use two simple convolution kernels [1, -1] and [-1, 1]. Threshold their magnitude to get pixel-precise, 1-pixel-thick edge maps.
+
+Distance Transform: On the ground truth edge map, compute a Euclidean Distance Transform (scipy.ndimage.distance_transform_edt). This creates an image D_gt(x,y) where the value is the distance in pixels to the nearest true edge.
+
+The CD Loss Calculation:
+
+Multiply the predicted binary edge map by the ground truth distance map.
+
+Sum these distances. This gives you the total edge misalignment error in pixels.
+
+Loss_CD = mean( D_gt * Edge_map_predicted )
+
+This loss is highly interpretable (a loss of 14.7 means your edges are, on average, 14.7 pixels away from where they should be) and is perfectly aligned with your goal of eliminating CD bias. You can even separate this into Loss_CD_shrink and Loss_CD_expand by checking the sign of the gradient at the misaligned edge. This will directly tell the optimizer, "Your line is too thin, fix it."
+
+Integrate this as your primary geometric loss, starting with a weight of 2.0. This is your "nuclear option" for CD bias.
+
+Priority 2 (High Impact): Diagnose and Fix the Worst Failures
+Your worst samples are a model-breaking problem. A median PSNR of 29 dB is acceptable if the minimum is 25 dB, but not 12 dB.
+
+Action 1: Extreme Noise Augmentation.
+Your Bit-Perfect Dihedral Augmentation is great for preserving geometry, but it does nothing for noise diversity. You must simulate the failure modes of the worst samples.
+
+Mosaic Augmentation: Create an augmentation that stitches a 2x2 grid of patches from 4 different training samples. This is a common trick to expose a model to unseen combinations of noise and topology.
+
+Synthetic Noise Blobs: Add random, large, low-frequency Gaussian blobs to your inputs. This simulates the extreme, structured noise that might be killing sample 002982.npy.
+
+Pseudo-OOD Generation: Use a simple, classic denoiser (like BM3D or NLM) on your worst training samples. The difference between the original and the denoised version is a rich map of the noise. Extract this "noise residual" and add it to other images to create new, hard training samples.
+
+Action 2: Create a Hard-Focused Validation Loop.
+Manually move your 10 worst validation samples into a separate hard_val directory. After every epoch, run a quick evaluation on this set. Early stopping should be based on the performance of this hard set. Your final model must not fail catastrophically on any sample.
+
+Priority 3 (Medium Impact): Refine the Edge Enhancement Strategy
+Once the CD bias is under control, improve LER.
+
+Action: Look into a Photoresist Physical Model as a loss term. The ideal edge of a resist line is often modeled as a convolution of a binary mask with a Gaussian kernel. Your model's output should approximate this.
+
+Compute the edge slope (gradient) along a cross-section of a line.
+
+Penalize the difference between the predicted edge slope and an ideal physical slope (which you might determine from a high-quality, low-noise reference sample). Your "Slope Fidelity" metric of 77.8% is good, this is how you push it higher. A simple L1 loss on the magnitude of the gradient directly at the edge transition zone is a good first-order approach.
+
+3. Alternative Tools Inside Your Pipeline
+Your pipeline is Python/PyTorch-based, which gives you access to a vast ecosystem. Here’s how to use other tools without changing your core model.
+
+For Analysis & Non-Destructive Pre-Processing (The "Microscope"):
+
+Use classic filtering to understand your signal: Before feeding data to your model, run high-quality implementations of BM3D, Non-Local Means, or Anisotropic Diffusion on your worst inputs. Look at the residuals. If a classical filter easily removes a certain noise pattern but your model struggles, it highlights a training data deficiency. Use the classical filter's output as a pseudo-ground truth to pre-train a quick sub-network or as an auxiliary target.
+
+scipy.ndimage is your metrology toolkit. Use it to build your distance-transform-based CD loss, robust percentile calibration, and direct LER measurements (scipy.ndimage.center_of_mass on binary edge masks along a line profile).
+
+For Data Augmentation (The "Forge"):
+
+kornia: This is a must-have. It's a differentiable computer vision library for PyTorch. You can implement photometric augmentations (random brightness/contrast/gamma) that are physically plausible representations of SEM beam current/voltage fluctuations. This directly attacks radiometric inconsistency.
+
+albumentations: Excellent for fast, pixel-level transforms. Its ElasticTransform or GridDistortion, when applied very subtly, can simulate sample charging artifacts without destroying the core Manhattan geometry.
+
+For a Drastic Architectural Shift (Only if all else fails):
+
+Score-Based Generative Models (e.g., NCSNv2, DDPM): If the noise floor is so low that parts of the signal are completely destroyed, a regression model (like your Restormer) will always output a blurry, biased mean. It's safe. A conditional diffusion model can hallucinate the most physically probable high-resolution line edge based on the surviving global context. This is high-risk but is the state-of-the-art for extreme inverse problems. You would condition it on your low-res image and use your entire metrology loss suite to guide the sampling process. This is a full research project, but it's your ultimate fallback.
