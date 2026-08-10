@@ -32,6 +32,23 @@ import matplotlib.pyplot as plt
 
 from sem_dataset import SEMPairDataset, SEMTestDataset, load_calib_stats
 from model import SemiRestoreNet_V2
+from swinir_model import SwinIR
+
+
+def build_model(cfg, device):
+    """cfg["model_type"] picks the architecture; absent means restormer,
+    since that's what older checkpoints (pre-SwinIR-branch) were saved
+    with and never had the key."""
+    model_type = cfg.get("model_type", "restormer")
+    if model_type == "swinir":
+        return SwinIR(
+            embed_dim=cfg["embed_dim"], depths=cfg["depths"], num_heads=cfg["num_heads"],
+            window_size=cfg["window_size"], mlp_ratio=cfg["mlp_ratio"],
+            scale_factor=cfg["scale_factor"],
+        ).to(device)
+    return SemiRestoreNet_V2(
+        dim=cfg["dim"], num_blocks=cfg["num_blocks"], scale_factor=cfg["scale_factor"],
+    ).to(device)
 
 
 # ---------------------------------------------------------------------------
@@ -122,9 +139,7 @@ def main():
           f"(as recorded during training)")
     print(f"Checkpoint config: {cfg}")
 
-    model = SemiRestoreNet_V2(
-        dim=cfg["dim"], num_blocks=cfg["num_blocks"], scale_factor=cfg["scale_factor"]
-    ).to(device)
+    model = build_model(cfg, device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()
 
