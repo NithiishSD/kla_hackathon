@@ -52,6 +52,7 @@ def main():
     # Same architecture as the checkpoint -- only the loss changes here.
     config = dict(base_cfg)
     config.update(dict(
+    num_blocks=3,  # keep same architecture
     ssim_weight=0.8,        # small, single new signal — was 0.4
     lr=5e-5,                # real fine-tune LR, 20x lower — was 1e-4
     edge_weight=1.5,       # KEEP baseline's 0.5, don't touch
@@ -60,7 +61,7 @@ def main():
     num_epochs=20,
     scheduler_patience=2,
     early_stop_patience=5,
-    checkpoint_dir="./checkpoints_ssim_v3",
+    checkpoint_dir="./checkpoints_ssim_v4",
 ))
     print("=== PHASE 3 SSIM FINE-TUNE ===")
     print("Config:", config)
@@ -93,10 +94,14 @@ def main():
 
     best_val_loss = float('inf')
     epochs_since_improvement = 0
-
+    target_ssim_weight = config["ssim_weight"] # e.g., 0.8
+    ramp_epochs = 5 # Number of epochs to reach full strength
     for epoch in range(config["num_epochs"]):
         t0 = time.time()
-
+        current_ssim_w = min(target_ssim_weight, target_ssim_weight * (epoch + 1) / ramp_epochs)
+        criterion.ssim_weight = current_ssim_w
+    
+        print(f"\n--- Epoch {epoch+1} | Active SSIM Weight: {current_ssim_w:.4f} ---")
         train_losses = []
         for lr_img, gt_img in train_loader:
             loss = engine.train_step(optimizer, criterion, None, lr_img, gt_img)
