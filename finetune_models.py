@@ -52,12 +52,12 @@ def main():
     # Same architecture as the checkpoint -- only the loss changes here.
     config = dict(base_cfg)
     config.update(dict(
-    ssim_weight=0.0,        # small, single new signal — was 0.4
-    lr=1e-4,                # real fine-tune LR, 20x lower — was 1e-4
-    edge_weight=base_cfg["edge_weight"],       # KEEP baseline's 0.5, don't touch
-    weight_decay=base_cfg["weight_decay"],     # KEEP baseline's 1e-4, don't touch
-    freq_weight=0.0,        # still off — isolate one variable
-    num_epochs=15,
+    ssim_weight=0.8,        # small, single new signal — was 0.4
+    lr=5e-5,                # real fine-tune LR, 20x lower — was 1e-4
+    edge_weight=1.5,       # KEEP baseline's 0.5, don't touch
+    weight_decay=1e-6,     # KEEP baseline's 1e-4, don't touch
+    freq_weight=0.15,        # still off — isolate one variable
+    num_epochs=20,
     scheduler_patience=2,
     early_stop_patience=5,
     checkpoint_dir="./checkpoints_ssim_v3",

@@ -80,6 +80,7 @@ class MetrologyRestormerBlock(nn.Module):
 class SemiRestoreNet_V2(nn.Module):
     def __init__(self, dim=64, num_blocks=2, scale_factor=2):
         super().__init__()
+        self.metrology_gain = nn.Parameter(torch.ones(1))
         self.scale_factor = scale_factor
         self.embed = nn.Conv2d(1, dim, 3, padding=1)
 
@@ -124,7 +125,7 @@ class SemiRestoreNet_V2(nn.Module):
         else:
             base = x
 
-        return torch.clamp(out + base, 0.0, 1.0)
+        return torch.clamp((out + base) * self.metrology_gain, 0.0, 1.0)
 
 
 # ---------------------------------------------------------------------------
