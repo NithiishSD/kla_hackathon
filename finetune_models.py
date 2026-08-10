@@ -74,8 +74,8 @@ def main():
 
     model = SemiRestoreNet_V2(dim=config["dim"], num_blocks=config["num_blocks"],
                                scale_factor=config["scale_factor"])
-    model.load_state_dict(ckpt["model_state"])  # CHANGE: warm start, not random init
-    print("Loaded Phase 2 weights as starting point.")
+    model.load_state_dict(ckpt["model_state"], strict=False) 
+    print("Loaded Phase 2 weights. Missing 'metrology_gain' initialized to default (1.0).")
 
     criterion = KLAMetrologyLoss(edge_weight=config["edge_weight"],
                                   freq_weight=config.get("freq_weight", 0.0),
