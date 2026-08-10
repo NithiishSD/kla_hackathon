@@ -63,5 +63,47 @@ Per your project's own convention (stated in finetune_ssim.py's docstring): a lo
 
 
 
+finetune 1:
+Resuming from ./checkpoints_ssim_v3/best_model.pt (epoch 14, val_psnr=27.88dB)
+=== PHASE 3 SSIM FINE-TUNE ===
+Config: {'dim': 64, 'num_blocks': 2, 'batch_size': 4, 'target_batch_size': 32, 'scale_factor': 2, 'edge_weight': 1.5, 'freq_weight': 0.15, 'ssim_weight': 0.8, 'lr': 5e-05, 'weight_decay': 1e-06, 'scheduler_patience': 2, 'early_stop_patience': 5, 'num_workers': 8, 'num_epochs': 20, 'use_compile': False, 'checkpoint_dir': './checkpoints_ssim_v3'}
+[SEMPairDataset] 3200 paired samples found.
+[SEMTestDataset] 400 test samples found.
+Loaded Phase 2 weights. Missing 'metrology_gain' initialized to default (1.0).
+--- [Modern GPU] Using bfloat16 on NVIDIA GeForce RTX 4050 Laptop GPU ---
+--- [Compute] DataLoader batch_size=4, target_batch_size=32 -> accum_steps=8 (actual effective batch = 32) ---
+[SSIM-FT] Epoch 1/20 [118.1s] [LR: 5.00e-05] train_loss=1.0003 val_loss=0.7944 val_psnr=22.30dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v3/best_model.pt
+[SSIM-FT] Epoch 2/20 [116.8s] [LR: 5.00e-05] train_loss=0.7452 val_loss=0.6878 val_psnr=22.84dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v3/best_model.pt
+[SSIM-FT] Epoch 3/20 [116.9s] [LR: 5.00e-05] train_loss=0.6807 val_loss=0.6378 val_psnr=23.18dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v3/best_model.pt
+[SSIM-FT] Epoch 4/20 [116.9s] [LR: 5.00e-05] train_loss=0.6376 val_loss=0.6101 val_psnr=23.12dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v3/best_model.pt
+[SSIM-FT] Epoch 5/20 [116.9s] [LR: 5.00e-05] train_loss=0.6108 val_loss=0.5854 val_psnr=23.29dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v3/best_model.pt
+[SSIM-FT] Epoch 6/20 [116.7s] [LR: 5.00e-05] train_loss=0.5922 val_loss=0.5730 val_psnr=23.32dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v3/best_model.pt
+[SSIM-FT] Epoch 7/20 [116.6s] [LR: 5.00e-05] train_loss=0.5790 val_loss=0.5588 val_psnr=23.49dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v3/best_model.pt
+[SSIM-FT] Epoch 8/20 [116.6s] [LR: 5.00e-05] train_loss=0.5724 val_loss=0.5664 val_psnr=23.08dB
+  -> val_loss did not improve (1/5)
+[SSIM-FT] Epoch 9/20 [116.6s] [LR: 5.00e-05] train_loss=0.5672 val_loss=0.5515 val_psnr=23.60dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v3/best_model.pt
+[SSIM-FT] Epoch 10/20 [116.5s] [LR: 5.00e-05] train_loss=0.5617 val_loss=0.5418 val_psnr=23.82dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v3/best_model.pt
+[SSIM-FT] Epoch 11/20 [116.6s] [LR: 5.00e-05] train_loss=0.5597 val_loss=0.5373 val_psnr=23.68dB
+  -> new best val_loss, saved to ./checkpoints_ssim_v3/best_model.pt
+[SSIM-FT] Epoch 12/20 [116.6s] [LR: 5.00e-05] train_loss=0.5568 val_loss=0.5377 val_psnr=24.03dB
+  -> val_loss did not improve (1/5)
+[SSIM-FT] Epoch 13/20 [116.6s] [LR: 5.00e-05] train_loss=0.5553 val_loss=0.5406 val_psnr=23.77dB
+  -> val_loss did not improve (2/5)
+[SSIM-FT] Epoch 14/20 [116.6s] [LR REDUCED: 5.00e-05 -> 2.50e-05] train_loss=0.5560 val_loss=0.5501 val_psnr=22.97dB
+  -> val_loss did not improve (3/5)
+[SSIM-FT] Epoch 15/20 [116.6s] [LR: 2.50e-05] train_loss=0.5531 val_loss=0.5403 val_psnr=23.73dB
+  -> val_loss did not improve (4/5)
+[SSIM-FT] Epoch 16/20 [116.5s] [LR: 2.50e-05] train_loss=0.5499 val_loss=0.5383 val_psnr=23.65dB
+  -> val_loss did not improve (5/5)
+STOPPING: fine-tune has plateaued at lower LR.
 
 
