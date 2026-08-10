@@ -5,6 +5,6 @@ data/train/*
 
 pycache/*
 *.pyc
-*.pt
-checkpoints/*
+
+
 test_results/*
