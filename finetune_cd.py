@@ -50,27 +50,32 @@ def main():
           f"(epoch {ckpt['epoch']+1}, val_psnr={ckpt['val_psnr']:.2f}dB)")
 
     config = dict(
-        dim=64,
-        num_blocks=2,
-        batch_size=4,
-        target_batch_size=32,
-        scale_factor=2,
-        edge_weight=2.5,         # Nuclear option: CD loss dominates
-        freq_weight=0.15,         # Keep Fourier supervision active
-        ssim_weight=0.3,          # Moderate structural guidance
-        lr=2.5e-05,               # Resume from where Phase 3 stopped
-        weight_decay=1e-06,
-        scheduler_patience=3,
-        early_stop_patience=7,    # More patience for CD convergence
-        num_workers=min(8, os.cpu_count() or 1),
-        num_epochs=30,
-        use_compile=False,
-        checkpoint_dir="./checkpoints_cd_v1",
-        # CD loss specific settings
-        use_cd_loss=True,
-        cd_edge_percentile=90.0,   # Keep sharpest 10% as edges
-        cd_max_distance=30.0,      # Clamp distance at 30px
-    )
+    dim=64,
+    num_blocks=2,
+    batch_size=4,
+    target_batch_size=32,
+    scale_factor=2,
+    
+    # REBALANCED loss weights
+    edge_weight=1.5,          # Symmetric CD loss, moderate weight
+    freq_weight=0.15,         # Keep Fourier active
+    ssim_weight=0.5,          # Higher — prevent structure collapse
+    charbonnier_weight=0.3,   # Higher — recover PSNR
+    
+    lr=2.5e-05,
+    weight_decay=1e-06,
+    scheduler_patience=3,
+    early_stop_patience=7,
+    num_workers=8,
+    num_epochs=30,
+    use_compile=False,
+    checkpoint_dir="./checkpoints_cd_v2",
+    
+    # CD loss: SYMMETRIC, gentler threshold
+    use_cd_loss=True,
+    cd_edge_percentile=75.0,   # Was 90.0 — less aggressive
+    cd_max_distance=30.0,
+)
     
     print("=== PHASE 4: CD BIAS EXTERMINATION ===")
     print("Config:", config)

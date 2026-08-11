@@ -132,32 +132,51 @@ class SemiRestoreNet_V2(nn.Module):
 # Loss
 # ---------------------------------------------------------------------------
 class KLAMetrologyLoss(nn.Module):
-    """Charbonnier + edge (Sobel) loss. If you want the Fourier Unit's
-    frequency-domain filtering to actually be supervised (rather than only
-    implicitly learned via the pixel/edge losses), add frequency_loss back
-    in -- see the commented-out block below."""
+    """Charbonnier + edge (Sobel or CD-aware) + optional frequency + optional SSIM loss.
+    
+    Args:
+        edge_weight: Weight for edge loss (Sobel or CD)
+        freq_weight: Weight for frequency-domain loss (0 = disabled)
+        ssim_weight: Weight for SSIM loss (0 = disabled)
+        use_cd_loss: If True, use CDMetrologyLoss instead of Sobel edge loss
+        cd_edge_percentile: Percentile threshold for CD edge extraction
+        cd_max_distance: Maximum distance clamp for CD loss
+        use_multiscale_ssim: If True, compute SSIM at multiple scales
+        ms_ssim_scales: List of scales for MS-SSIM (e.g., [1.0, 0.5, 0.25])
+        ms_ssim_weights: Weights for each scale in MS-SSIM
+        charbonnier_weight: Weight for Charbonnier fidelity loss
+    """
 
-    class KLAMetrologyLoss(nn.Module):
-        def __init__(self, edge_weight=0.5, freq_weight=0.0, ssim_weight=0.0, 
-                 use_cd_loss=False, cd_edge_percentile=90.0, cd_max_distance=30.0):
-            super().__init__()
-            self.edge_weight = edge_weight
-            self.freq_weight = freq_weight
-            self.ssim_weight = ssim_weight
-            self.use_cd_loss = use_cd_loss
-            
-            # Original Sobel kernels (kept for backward compatibility)
-            self.register_buffer('sobel_x', torch.tensor(
-                [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32).view(1, 1, 3, 3))
-            self.register_buffer('sobel_y', torch.tensor(
-                [[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32).view(1, 1, 3, 3))
-            
-            # New: CD-aware edge loss (replaces Sobel when use_cd_loss=True)
-            self.cd_loss = CDMetrologyLoss(edge_percentile=cd_edge_percentile, 
-                                            max_distance=cd_max_distance) if use_cd_loss else None
-            
-            # Gaussian window for SSIM
-            self.register_buffer('_ssim_window', self._make_gaussian_window(11, 1.5))
+    def __init__(self, edge_weight=0.5, freq_weight=0.0, ssim_weight=0.0,
+                 use_cd_loss=False, cd_edge_percentile=90.0, cd_max_distance=30.0,
+                 use_multiscale_ssim=False, ms_ssim_scales=None, ms_ssim_weights=None,
+                 charbonnier_weight=1.0):
+        super().__init__()
+        self.edge_weight = edge_weight
+        self.freq_weight = freq_weight
+        self.ssim_weight = ssim_weight
+        self.use_cd_loss = use_cd_loss
+        self.charbonnier_weight = charbonnier_weight
+        
+        # Multi-scale SSIM config
+        self.use_multiscale_ssim = use_multiscale_ssim
+        self.ms_ssim_scales = ms_ssim_scales or [1.0, 0.5, 0.25]
+        self.ms_ssim_weights = ms_ssim_weights or [0.5, 0.3, 0.2]
+        
+        # Sobel kernels
+        self.register_buffer('sobel_x', torch.tensor(
+            [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32).view(1, 1, 3, 3))
+        self.register_buffer('sobel_y', torch.tensor(
+            [[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32).view(1, 1, 3, 3))
+        
+        # CD-aware edge loss
+        self.cd_loss = CDMetrologyLoss(edge_percentile=cd_edge_percentile, 
+                                        max_distance=cd_max_distance) if use_cd_loss else None
+        
+        # Gaussian windows for SSIM
+        self.register_buffer('_ssim_window', self._make_gaussian_window(11, 1.5))
+        self.register_buffer('_ssim_window_small', self._make_gaussian_window(7, 1.0))
+
     @staticmethod
     def _make_gaussian_window(window_size, sigma):
         coords = torch.arange(window_size, dtype=torch.float32) - window_size // 2
@@ -170,6 +189,7 @@ class KLAMetrologyLoss(nn.Module):
         return torch.mean(torch.sqrt((pred - target) ** 2 + eps))
 
     def edge_loss(self, pred, target):
+        """Original Sobel edge loss — penalizes gradient magnitude differences."""
         pred_f, target_f = pred.float(), target.float()
         p_edge = F.conv2d(pred_f, self.sobel_x, padding=1) ** 2 + \
                  F.conv2d(pred_f, self.sobel_y, padding=1) ** 2
@@ -182,12 +202,9 @@ class KLAMetrologyLoss(nn.Module):
         gt_fft = torch.fft.rfft2(target.float(), norm='ortho')
         return F.l1_loss(torch.abs(pred_fft), torch.abs(gt_fft))
 
-    def ssim_loss(self, pred, target, data_range=1.0):
-        """1 - SSIM, forced fp32 like the other frequency/edge terms above --
-        addresses the 'melting'/over-smoothing that pure L1-style losses
-        (Charbonnier) are documented to cause under high noise."""
+    def ssim_loss_single_scale(self, pred, target, window, data_range=1.0):
+        """SSIM loss at a single scale (extracted for reuse in MS-SSIM)."""
         pred_f, target_f = pred.float(), target.float()
-        window = self._ssim_window
         pad = window.shape[-1] // 2
         C1 = (0.01 * data_range) ** 2
         C2 = (0.03 * data_range) ** 2
@@ -204,23 +221,45 @@ class KLAMetrologyLoss(nn.Module):
                    ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
         return 1.0 - ssim_map.mean()
 
-    def forward(self, pred, target):
-            l_char = self.charbonnier_loss(pred, target)
-            
-            # Edge loss: use CD-aware version if enabled, otherwise Sobel
-            if self.use_cd_loss and self.cd_loss is not None:
-                l_edge = self.cd_loss(pred, target)
+    def multiscale_ssim_loss(self, pred, target, data_range=1.0):
+        """MS-SSIM: same SSIM computed at multiple resolutions."""
+        total = 0.0
+        for scale, w in zip(self.ms_ssim_scales, self.ms_ssim_weights):
+            if scale == 1.0:
+                p, t = pred.float(), target.float()
             else:
-                l_edge = self.edge_loss(pred, target)
-                
-            loss = l_char + self.edge_weight * l_edge
+                h = int(pred.shape[2] * scale)
+                w_new = int(pred.shape[3] * scale)
+                p = F.interpolate(pred.float(), size=(h, w_new), mode='bilinear', align_corners=False)
+                t = F.interpolate(target.float(), size=(h, w_new), mode='bilinear', align_corners=False)
             
-            if self.freq_weight > 0:
-                loss = loss + self.freq_weight * self.frequency_loss(pred, target)
-            if self.ssim_weight > 0:
-                loss = loss + self.ssim_weight * self.ssim_loss(pred, target)
-            return loss
+            # Use smaller window for smaller scales
+            window = self._ssim_window if scale >= 0.5 else self._ssim_window_small
+            total += w * self.ssim_loss_single_scale(p, t, window, data_range)
+        return total
 
+    def ssim_loss(self, pred, target, data_range=1.0):
+        """Overloaded: calls multi-scale or single-scale based on config."""
+        if self.use_multiscale_ssim:
+            return self.multiscale_ssim_loss(pred, target, data_range)
+        return self.ssim_loss_single_scale(pred, target, self._ssim_window, data_range)
+
+    def forward(self, pred, target):
+        l_char = self.charbonnier_weight * self.charbonnier_loss(pred, target)
+        
+        # Edge loss: CD-aware or Sobel
+        if self.use_cd_loss and self.cd_loss is not None:
+            l_edge = self.cd_loss(pred, target)
+        else:
+            l_edge = self.edge_loss(pred, target)
+        
+        loss = l_char + self.edge_weight * l_edge
+        
+        if self.freq_weight > 0:
+            loss = loss + self.freq_weight * self.frequency_loss(pred, target)
+        if self.ssim_weight > 0:
+            loss = loss + self.ssim_weight * self.ssim_loss(pred, target)
+        return loss
 class CDMetrologyLoss(nn.Module):
     """
     Thresholded edge-position loss that directly minimizes CD Bias.
@@ -311,22 +350,29 @@ class CDMetrologyLoss(nn.Module):
     
     def forward(self, pred, target):
         """
-        Args:
-            pred, target: (B, 1, H, W) tensors in [0, 1]
-        Returns:
-            CD loss scalar — approximately average edge misalignment in pixels
+        Symmetric CD loss: penalizes misalignment in BOTH directions.
+        
+        - pred_edges far from target_edges: model hallucinated edges
+        - target_edges far from pred_edges: model missed real edges
+        
+        The sum ensures the model can't cheat by making edges everywhere
+        or by making no edges at all.
         """
         pred_edges = self.extract_edges(pred)
         target_edges = self.extract_edges(target)
         
-        # Compute distance from each predicted edge pixel to nearest target edge
-        # For each sample in batch, compute distance transform of target edges
         total_loss = 0.0
         for b in range(pred.shape[0]):
+            # Direction 1: How far are predicted edges from target edges?
             dist_to_target = self._distance_transform(target_edges[b:b+1])
-            # Penalize predicted edge pixels by their distance from target edges
-            misaligned = pred_edges[b:b+1] * dist_to_target
-            total_loss += misaligned.mean()
+            loss_pred_to_target = (pred_edges[b:b+1] * dist_to_target).mean()
+            
+            # Direction 2: How far are target edges from predicted edges?
+            # This is the CRITICAL missing piece — prevents over-dilation
+            dist_to_pred = self._distance_transform(pred_edges[b:b+1])
+            loss_target_to_pred = (target_edges[b:b+1] * dist_to_pred).mean()
+            
+            total_loss += (loss_pred_to_target + loss_target_to_pred)
         
         return total_loss / pred.shape[0]
 # ---------------------------------------------------------------------------
