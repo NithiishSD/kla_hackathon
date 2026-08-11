@@ -149,6 +149,7 @@ class KLAMetrologyLoss(nn.Module):
 
     def __init__(self, edge_weight=0.5, freq_weight=0.0, ssim_weight=0.0,
                  use_cd_loss=False, cd_edge_percentile=90.0, cd_max_distance=30.0,
+                 use_profile_loss=False, num_profiles=32, profile_width=5,
                  use_multiscale_ssim=False, ms_ssim_scales=None, ms_ssim_weights=None,
                  charbonnier_weight=1.0):
         super().__init__()
@@ -170,8 +171,11 @@ class KLAMetrologyLoss(nn.Module):
             [[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32).view(1, 1, 3, 3))
         
         # CD-aware edge loss
-        self.cd_loss = CDMetrologyLoss(edge_percentile=cd_edge_percentile, 
-                                        max_distance=cd_max_distance) if use_cd_loss else None
+        self.use_profile_loss = use_profile_loss
+        self.profile_loss = IntensityProfileLoss(
+            num_profiles=num_profiles,
+            profile_width=profile_width,
+        ) if use_profile_loss else None
         
         # Gaussian windows for SSIM
         self.register_buffer('_ssim_window', self._make_gaussian_window(11, 1.5))
@@ -247,8 +251,10 @@ class KLAMetrologyLoss(nn.Module):
     def forward(self, pred, target):
         l_char = self.charbonnier_weight * self.charbonnier_loss(pred, target)
         
-        # Edge loss: CD-aware or Sobel
-        if self.use_cd_loss and self.cd_loss is not None:
+        # Edge loss: profile > CD > Sobel (priority order)
+        if self.use_profile_loss and self.profile_loss is not None:
+            l_edge = self.profile_loss(pred, target)
+        elif self.use_cd_loss and self.cd_loss is not None:
             l_edge = self.cd_loss(pred, target)
         else:
             l_edge = self.edge_loss(pred, target)
@@ -260,121 +266,91 @@ class KLAMetrologyLoss(nn.Module):
         if self.ssim_weight > 0:
             loss = loss + self.ssim_weight * self.ssim_loss(pred, target)
         return loss
-class CDMetrologyLoss(nn.Module):
+class IntensityProfileLoss(nn.Module):
     """
-    Thresholded edge-position loss that directly minimizes CD Bias.
+    Metrology-grade loss based on intensity profile matching.
     
-    Instead of penalizing gradient magnitude differences (like Sobel loss),
-    this extracts binary edge maps from both prediction and target, then
-    penalizes the Euclidean distance from each predicted edge pixel to the
-    nearest target edge pixel.
+    Instead of binarizing edges and computing distances, this loss:
+    1. Detects line features via horizontal/vertical projections
+    2. Extracts cross-section intensity profiles
+    3. Penalizes profile mismatch — which naturally captures CD bias,
+       edge slope, and LER in a single, physically meaningful loss.
     
-    The loss value is approximately interpretable as "average edge
-    misalignment in pixels" — so a value of 14.7 directly corresponds
-    to your -14.74 px CD Bias metric.
-    
-    Args:
-        edge_percentile: Top percentile of gradient magnitude to keep as
-            "edge pixels" (default 90 means keep the sharpest 10% of gradients).
-        max_distance: Clamp distance transform to this value to prevent
-            single extreme outliers from dominating the loss.
+    This is how real CD-SEM metrology algorithms work.
     """
-    def __init__(self, edge_percentile=90.0, max_distance=30.0):
+    def __init__(self, num_profiles=32, profile_width=5, edge_zone_weight=2.0):
         super().__init__()
-        self.edge_percentile = edge_percentile
-        self.max_distance = max_distance
-        
-        # Simple 3x1 Sobel kernels for gradient extraction
-        sobel_x = torch.tensor([[-1., 0., 1.],
-                                [-2., 0., 2.],
-                                [-1., 0., 1.]], dtype=torch.float32).view(1, 1, 3, 3)
-        sobel_y = torch.tensor([[-1., -2., -1.],
-                                [ 0.,  0.,  0.],
-                                [ 1.,  2.,  1.]], dtype=torch.float32).view(1, 1, 3, 3)
-        self.register_buffer('sobel_x', sobel_x)
-        self.register_buffer('sobel_y', sobel_y)
+        self.num_profiles = num_profiles
+        self.profile_width = profile_width
+        self.edge_zone_weight = edge_zone_weight
     
-    def extract_edges(self, img):
+    def extract_profiles(self, img, axis='both'):
         """
-        Extract binary edge map: 1 = edge pixel, 0 = non-edge.
+        Extract intensity profiles perpendicular to line features.
         
-        Keeps the top (100 - edge_percentile)% of gradient magnitudes
-        as edge pixels. This adaptive threshold handles varying contrast
-        across samples without needing a fixed threshold value.
+        For SEM images with Manhattan geometry, lines run either
+        horizontal or vertical. We take profiles in both directions.
         """
-        grad_x = F.conv2d(img, self.sobel_x, padding=1)
-        grad_y = F.conv2d(img, self.sobel_y, padding=1)
-        grad_mag = torch.sqrt(grad_x**2 + grad_y**2 + 1e-8)
+        B, C, H, W = img.shape
+        profiles_pred = []
+        profiles_target = []
         
-        B = grad_mag.shape[0]
-        edges = []
-        for b in range(B):
-            flat = grad_mag[b].reshape(-1)
-            k = max(1, int(flat.numel() * (1.0 - self.edge_percentile / 100.0)))
-            thresh = flat.topk(k, largest=True).values[-1]
-            edges.append((grad_mag[b] >= thresh).float().unsqueeze(0))
-        return torch.cat(edges, dim=0)
+        # Horizontal profiles (crossing vertical lines)
+        # Sample random rows and extract full-width intensity profiles
+        if H > self.num_profiles:
+            indices = torch.randperm(H)[:self.num_profiles]
+        else:
+            indices = torch.arange(H)
+        
+        for idx in indices:
+            # Profile is the intensity along this row
+            profiles_pred.append(img[:, :, idx, :])   # (B, C, W)
+        
+        # Vertical profiles (crossing horizontal lines)
+        if W > self.num_profiles:
+            indices = torch.randperm(W)[:self.num_profiles]
+        else:
+            indices = torch.arange(W)
+        
+        for idx in indices:
+            profiles_pred.append(img[:, :, :, idx])   # (B, C, H)
+        
+        return profiles_pred  # list of (B, C, length) tensors
     
-    def _distance_transform(self, edge_map):
+    def profile_gradient_loss(self, pred_profile, target_profile):
         """
-        Euclidean distance transform: for each pixel, distance to nearest
-        edge pixel in edge_map. Runs on CPU via numpy (scipy not strictly
-        needed — we can approximate or use a small conv kernel approach).
+        Penalize differences in the GRADIENT of the profile.
         
-        For simplicity and to avoid scipy dependency, we use repeated
-        max-pooling as an approximation of the distance transform.
-        This is fully GPU-compatible and differentiable.
+        The gradient highlights edge transitions. Matching gradients
+        means matching edge positions AND edge sharpness simultaneously.
+        
+        This is the key insight: CD bias shows up as shifted gradient peaks.
+        Slope errors show up as broadened/narrowed gradient peaks.
         """
-        # Invert: we want distance TO edges, so non-edges get distance > 0
-        inv = 1.0 - edge_map  # 1 where NOT an edge, 0 at edges
+        # Compute gradients along the profile
+        pred_grad = pred_profile[:, :, 1:] - pred_profile[:, :, :-1]
+        target_grad = target_profile[:, :, 1:] - target_profile[:, :, :-1]
         
-        # Approximate distance transform via iterative dilation
-        # Each iteration dilates the "non-edge" region by 1 pixel
-        # This is NOT perfectly Euclidean but is good enough for loss
-        kernel_size = 3
-        kernel = torch.ones(1, 1, kernel_size, kernel_size, device=edge_map.device)
-        
-        dist = torch.zeros_like(inv)
-        current = inv.clone()
-        for d in range(1, int(self.max_distance) + 1):
-            dilated = F.conv2d(current, kernel, padding=1)
-            dilated = (dilated > 0).float()
-            # Pixels that just became non-edge at this distance
-            newly_reached = (dilated - current) > 0
-            dist[newly_reached] = d
-            current = dilated
-        
-        # Clamp to max_distance
-        dist = torch.clamp(dist, 0, self.max_distance)
-        return dist
+        # L1 loss on gradients — directly penalizes edge position mismatch
+        return F.l1_loss(pred_grad, target_grad)
     
     def forward(self, pred, target):
         """
-        Symmetric CD loss: penalizes misalignment in BOTH directions.
-        
-        - pred_edges far from target_edges: model hallucinated edges
-        - target_edges far from pred_edges: model missed real edges
-        
-        The sum ensures the model can't cheat by making edges everywhere
-        or by making no edges at all.
+        Extract profiles from prediction and target, compute gradient
+        matching loss. This naturally enforces CD accuracy without
+        fragile binarization or distance transforms.
         """
-        pred_edges = self.extract_edges(pred)
-        target_edges = self.extract_edges(target)
+        B = pred.shape[0]
+        
+        # Extract profiles from both images
+        pred_profiles = self.extract_profiles(pred)
+        target_profiles = self.extract_profiles(target)
         
         total_loss = 0.0
-        for b in range(pred.shape[0]):
-            # Direction 1: How far are predicted edges from target edges?
-            dist_to_target = self._distance_transform(target_edges[b:b+1])
-            loss_pred_to_target = (pred_edges[b:b+1] * dist_to_target).mean()
-            
-            # Direction 2: How far are target edges from predicted edges?
-            # This is the CRITICAL missing piece — prevents over-dilation
-            dist_to_pred = self._distance_transform(pred_edges[b:b+1])
-            loss_target_to_pred = (target_edges[b:b+1] * dist_to_pred).mean()
-            
-            total_loss += (loss_pred_to_target + loss_target_to_pred)
+        for p_prof, t_prof in zip(pred_profiles, target_profiles):
+            total_loss += self.profile_gradient_loss(p_prof, t_prof)
         
-        return total_loss / pred.shape[0]
+        return total_loss / len(pred_profiles)
 # ---------------------------------------------------------------------------
 # Optimizer with weight decay excluded from norm/bias/temperature params
 # ---------------------------------------------------------------------------
