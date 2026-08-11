@@ -87,3 +87,45 @@ Dilate 25 px: 0.044665
 
 2:
 finetune vgg training:
+Evaluating on 320 held-out validation samples...
+
+=== Validation set summary (n=320) ===
+PSNR: mean=29.41dB  std=4.63  min=12.07  max=45.52
+SSIM: mean=0.7777  std=0.1552  min=0.2860  max=0.9728
+
+Worst 5 samples by PSNR:
+  002982.npy: PSNR=12.07dB, SSIM=0.2902
+  001908.npy: PSNR=19.12dB, SSIM=0.3502
+  001387.npy: PSNR=20.61dB, SSIM=0.7993
+  000108.npy: PSNR=20.61dB, SSIM=0.6733
+  001386.npy: PSNR=20.72dB, SSIM=0.8054
+
+Best 5 samples by PSNR:
+  001082.npy: PSNR=39.95dB, SSIM=0.9433
+  002217.npy: PSNR=40.27dB, SSIM=0.9581
+  003117.npy: PSNR=42.52dB, SSIM=0.9615
+  002225.npy: PSNR=43.24dB, SSIM=0.9641
+  001827.npy: PSNR=45.52dB, SSIM=0.9644
+
+=== Named Difficulty Samples ===
+  000218.npy: PSNR=31.90dB, SSIM=0.8428
+  000352.npy: PSNR=12.17dB, SSIM=0.2971
+  000425.npy: PSNR=34.48dB, SSIM=0.8862
+
+=============================================
+        FINAL METROLOGY SCORECARD
+=============================================
+Mean CD Bias:   -16.969 px
+Mean LER Error: 23.623 px
+Mean LWR Error: 27.193 px
+Slope Fidelity: 76.6 %
+=============================================
+
+=== Processing Test Set (no GT) ===
+[SEMTestDataset] 400 test samples found.
+
+Done. Detailed visuals and summary in ./eval_outputs_cd_v2/
+
+
+
+now doing CD Baseline Test:
