@@ -39,9 +39,10 @@ def main():
         batch_size=4,
         target_batch_size=32,
         scale_factor=2,
-        edge_weight=0.5,         # CHANGE vs Phase 2: safe default, not 0.8
+        edge_weight=0.0,         # CHANGE vs Phase 2: safe default, not 0.8
         freq_weight=0.0,         # CHANGE vs Phase 2: off, not 0.15
         ssim_weight=0.0,
+        charbonnier_weight=1.0, # CHANGE vs Phase 2: safe default, not 0.5
         lr=2e-4,
         weight_decay=1e-4,       # CHANGE vs Phase 2: safe default, not 5e-4
         scheduler_patience=3,
@@ -49,7 +50,7 @@ def main():
         num_workers=min(8, os.cpu_count() or 1),
         num_epochs=50,
         use_compile=False,
-        checkpoint_dir="./checkpoints_baseline_v2",  # separate from Phase 2
+        checkpoint_dir="./checkpoints_baseline_v3",  # separate from Phase 2
     )
     print("=== BASELINE ABLATION RUN ===")
     print("Config:", config)
