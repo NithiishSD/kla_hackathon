@@ -127,7 +127,121 @@ class SemiRestoreNet_V2(nn.Module):
 
         return torch.clamp((out + base) * self.metrology_gain, 0.0, 1.0)
 
-
+class CDMetrologyLoss(nn.Module):
+    """
+    Thresholded edge-position loss that directly minimizes CD Bias.
+    
+    Instead of penalizing gradient magnitude differences (like Sobel loss),
+    this extracts binary edge maps from both prediction and target, then
+    penalizes the Euclidean distance from each predicted edge pixel to the
+    nearest target edge pixel.
+    
+    The loss value is approximately interpretable as "average edge
+    misalignment in pixels" — so a value of 14.7 directly corresponds
+    to your -14.74 px CD Bias metric.
+    
+    Args:
+        edge_percentile: Top percentile of gradient magnitude to keep as
+            "edge pixels" (default 90 means keep the sharpest 10% of gradients).
+        max_distance: Clamp distance transform to this value to prevent
+            single extreme outliers from dominating the loss.
+    """
+    def __init__(self, edge_percentile=90.0, max_distance=30.0):
+        super().__init__()
+        self.edge_percentile = edge_percentile
+        self.max_distance = max_distance
+        
+        # Simple 3x1 Sobel kernels for gradient extraction
+        sobel_x = torch.tensor([[-1., 0., 1.],
+                                [-2., 0., 2.],
+                                [-1., 0., 1.]], dtype=torch.float32).view(1, 1, 3, 3)
+        sobel_y = torch.tensor([[-1., -2., -1.],
+                                [ 0.,  0.,  0.],
+                                [ 1.,  2.,  1.]], dtype=torch.float32).view(1, 1, 3, 3)
+        self.register_buffer('sobel_x', sobel_x)
+        self.register_buffer('sobel_y', sobel_y)
+    
+    def extract_edges(self, img):
+        """
+        Extract binary edge map: 1 = edge pixel, 0 = non-edge.
+        
+        Keeps the top (100 - edge_percentile)% of gradient magnitudes
+        as edge pixels. This adaptive threshold handles varying contrast
+        across samples without needing a fixed threshold value.
+        """
+        grad_x = F.conv2d(img, self.sobel_x, padding=1)
+        grad_y = F.conv2d(img, self.sobel_y, padding=1)
+        grad_mag = torch.sqrt(grad_x**2 + grad_y**2 + 1e-8)
+        
+        B = grad_mag.shape[0]
+        edges = []
+        for b in range(B):
+            flat = grad_mag[b].reshape(-1)
+            k = max(1, int(flat.numel() * (1.0 - self.edge_percentile / 100.0)))
+            thresh = flat.topk(k, largest=True).values[-1]
+            edges.append((grad_mag[b] >= thresh).float().unsqueeze(0))
+        return torch.cat(edges, dim=0)
+    
+    def _distance_transform(self, edge_map):
+        """
+        Euclidean distance transform: for each pixel, distance to nearest
+        edge pixel in edge_map. Runs on CPU via numpy (scipy not strictly
+        needed — we can approximate or use a small conv kernel approach).
+        
+        For simplicity and to avoid scipy dependency, we use repeated
+        max-pooling as an approximation of the distance transform.
+        This is fully GPU-compatible and differentiable.
+        """
+        # Invert: we want distance TO edges, so non-edges get distance > 0
+        inv = 1.0 - edge_map  # 1 where NOT an edge, 0 at edges
+        
+        # Approximate distance transform via iterative dilation
+        # Each iteration dilates the "non-edge" region by 1 pixel
+        # This is NOT perfectly Euclidean but is good enough for loss
+        kernel_size = 3
+        kernel = torch.ones(1, 1, kernel_size, kernel_size, device=edge_map.device)
+        
+        dist = torch.zeros_like(inv)
+        current = inv.clone()
+        for d in range(1, int(self.max_distance) + 1):
+            dilated = F.conv2d(current, kernel, padding=1)
+            dilated = (dilated > 0).float()
+            # Pixels that just became non-edge at this distance
+            newly_reached = (dilated - current) > 0
+            dist[newly_reached] = d
+            current = dilated
+        
+        # Clamp to max_distance
+        dist = torch.clamp(dist, 0, self.max_distance)
+        return dist
+    
+    def forward(self, pred, target):
+        """
+        Symmetric CD loss: penalizes misalignment in BOTH directions.
+        
+        - pred_edges far from target_edges: model hallucinated edges
+        - target_edges far from pred_edges: model missed real edges
+        
+        The sum ensures the model can't cheat by making edges everywhere
+        or by making no edges at all.
+        """
+        pred_edges = self.extract_edges(pred)
+        target_edges = self.extract_edges(target)
+        
+        total_loss = 0.0
+        for b in range(pred.shape[0]):
+            # Direction 1: How far are predicted edges from target edges?
+            dist_to_target = self._distance_transform(target_edges[b:b+1])
+            loss_pred_to_target = (pred_edges[b:b+1] * dist_to_target).mean()
+            
+            # Direction 2: How far are target edges from predicted edges?
+            # This is the CRITICAL missing piece — prevents over-dilation
+            dist_to_pred = self._distance_transform(pred_edges[b:b+1])
+            loss_target_to_pred = (target_edges[b:b+1] * dist_to_pred).mean()
+            
+            total_loss += (loss_pred_to_target + loss_target_to_pred)
+        
+        return total_loss / pred.shape[0]
 # ---------------------------------------------------------------------------
 # Loss
 # ---------------------------------------------------------------------------
@@ -260,121 +374,7 @@ class KLAMetrologyLoss(nn.Module):
         if self.ssim_weight > 0:
             loss = loss + self.ssim_weight * self.ssim_loss(pred, target)
         return loss
-class CDMetrologyLoss(nn.Module):
-    """
-    Thresholded edge-position loss that directly minimizes CD Bias.
-    
-    Instead of penalizing gradient magnitude differences (like Sobel loss),
-    this extracts binary edge maps from both prediction and target, then
-    penalizes the Euclidean distance from each predicted edge pixel to the
-    nearest target edge pixel.
-    
-    The loss value is approximately interpretable as "average edge
-    misalignment in pixels" — so a value of 14.7 directly corresponds
-    to your -14.74 px CD Bias metric.
-    
-    Args:
-        edge_percentile: Top percentile of gradient magnitude to keep as
-            "edge pixels" (default 90 means keep the sharpest 10% of gradients).
-        max_distance: Clamp distance transform to this value to prevent
-            single extreme outliers from dominating the loss.
-    """
-    def __init__(self, edge_percentile=90.0, max_distance=30.0):
-        super().__init__()
-        self.edge_percentile = edge_percentile
-        self.max_distance = max_distance
-        
-        # Simple 3x1 Sobel kernels for gradient extraction
-        sobel_x = torch.tensor([[-1., 0., 1.],
-                                [-2., 0., 2.],
-                                [-1., 0., 1.]], dtype=torch.float32).view(1, 1, 3, 3)
-        sobel_y = torch.tensor([[-1., -2., -1.],
-                                [ 0.,  0.,  0.],
-                                [ 1.,  2.,  1.]], dtype=torch.float32).view(1, 1, 3, 3)
-        self.register_buffer('sobel_x', sobel_x)
-        self.register_buffer('sobel_y', sobel_y)
-    
-    def extract_edges(self, img):
-        """
-        Extract binary edge map: 1 = edge pixel, 0 = non-edge.
-        
-        Keeps the top (100 - edge_percentile)% of gradient magnitudes
-        as edge pixels. This adaptive threshold handles varying contrast
-        across samples without needing a fixed threshold value.
-        """
-        grad_x = F.conv2d(img, self.sobel_x, padding=1)
-        grad_y = F.conv2d(img, self.sobel_y, padding=1)
-        grad_mag = torch.sqrt(grad_x**2 + grad_y**2 + 1e-8)
-        
-        B = grad_mag.shape[0]
-        edges = []
-        for b in range(B):
-            flat = grad_mag[b].reshape(-1)
-            k = max(1, int(flat.numel() * (1.0 - self.edge_percentile / 100.0)))
-            thresh = flat.topk(k, largest=True).values[-1]
-            edges.append((grad_mag[b] >= thresh).float().unsqueeze(0))
-        return torch.cat(edges, dim=0)
-    
-    def _distance_transform(self, edge_map):
-        """
-        Euclidean distance transform: for each pixel, distance to nearest
-        edge pixel in edge_map. Runs on CPU via numpy (scipy not strictly
-        needed — we can approximate or use a small conv kernel approach).
-        
-        For simplicity and to avoid scipy dependency, we use repeated
-        max-pooling as an approximation of the distance transform.
-        This is fully GPU-compatible and differentiable.
-        """
-        # Invert: we want distance TO edges, so non-edges get distance > 0
-        inv = 1.0 - edge_map  # 1 where NOT an edge, 0 at edges
-        
-        # Approximate distance transform via iterative dilation
-        # Each iteration dilates the "non-edge" region by 1 pixel
-        # This is NOT perfectly Euclidean but is good enough for loss
-        kernel_size = 3
-        kernel = torch.ones(1, 1, kernel_size, kernel_size, device=edge_map.device)
-        
-        dist = torch.zeros_like(inv)
-        current = inv.clone()
-        for d in range(1, int(self.max_distance) + 1):
-            dilated = F.conv2d(current, kernel, padding=1)
-            dilated = (dilated > 0).float()
-            # Pixels that just became non-edge at this distance
-            newly_reached = (dilated - current) > 0
-            dist[newly_reached] = d
-            current = dilated
-        
-        # Clamp to max_distance
-        dist = torch.clamp(dist, 0, self.max_distance)
-        return dist
-    
-    def forward(self, pred, target):
-        """
-        Symmetric CD loss: penalizes misalignment in BOTH directions.
-        
-        - pred_edges far from target_edges: model hallucinated edges
-        - target_edges far from pred_edges: model missed real edges
-        
-        The sum ensures the model can't cheat by making edges everywhere
-        or by making no edges at all.
-        """
-        pred_edges = self.extract_edges(pred)
-        target_edges = self.extract_edges(target)
-        
-        total_loss = 0.0
-        for b in range(pred.shape[0]):
-            # Direction 1: How far are predicted edges from target edges?
-            dist_to_target = self._distance_transform(target_edges[b:b+1])
-            loss_pred_to_target = (pred_edges[b:b+1] * dist_to_target).mean()
-            
-            # Direction 2: How far are target edges from predicted edges?
-            # This is the CRITICAL missing piece — prevents over-dilation
-            dist_to_pred = self._distance_transform(pred_edges[b:b+1])
-            loss_target_to_pred = (target_edges[b:b+1] * dist_to_pred).mean()
-            
-            total_loss += (loss_pred_to_target + loss_target_to_pred)
-        
-        return total_loss / pred.shape[0]
+
 # ---------------------------------------------------------------------------
 # Optimizer with weight decay excluded from norm/bias/temperature params
 # ---------------------------------------------------------------------------
