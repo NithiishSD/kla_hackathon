@@ -1,7 +1,9 @@
 env/*
 *.exe
 data/*
-pycache/*
+__pycache__/*
 *.pyc
 *.pt
 checkpoints/*
+submission_test_outputs_*/*
+eval_outputs/*

@@ -136,11 +136,12 @@ class KLAMetrologyLoss(nn.Module):
     implicitly learned via the pixel/edge losses), add frequency_loss back
     in -- see the commented-out block below."""
 
-    def __init__(self, edge_weight=0.5, freq_weight=0.0, ssim_weight=0.0):
+    def __init__(self, edge_weight=0.5, freq_weight=0.0, ssim_weight=0.0, ms_ssim_weight=0.0):
         super().__init__()
         self.edge_weight = edge_weight
         self.freq_weight = freq_weight  # 0.0 by default; set >0 to re-enable
         self.ssim_weight = ssim_weight  # 0.0 by default; set >0 for Phase 3
+        self.ms_ssim_weight = ms_ssim_weight  # 0.0 by default; multi-scale SSIM term
         self.register_buffer('sobel_x', torch.tensor(
             [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32).view(1, 1, 3, 3))
         self.register_buffer('sobel_y', torch.tensor(
@@ -149,6 +150,9 @@ class KLAMetrologyLoss(nn.Module):
         # metric, but used here as a differentiable LOSS term (1 - SSIM),
         # not just a reported number.
         self.register_buffer('_ssim_window', self._make_gaussian_window(11, 1.5))
+        # Wang/Simoncelli/Bovik 2003 per-scale weights, coarsest scale last.
+        self.register_buffer('_ms_ssim_weights',
+                              torch.tensor([0.0448, 0.2856, 0.3001, 0.2363, 0.1333]))
 
     @staticmethod
     def _make_gaussian_window(window_size, sigma):
@@ -196,6 +200,65 @@ class KLAMetrologyLoss(nn.Module):
                    ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
         return 1.0 - ssim_map.mean()
 
+    def _ssim_and_cs(self, pred, target, data_range=1.0):
+        """Returns (full SSIM incl. luminance, contrast*structure only --
+        the piece MS-SSIM reuses at every scale except the coarsest)."""
+        window = self._ssim_window
+        pad = window.shape[-1] // 2
+        C1 = (0.01 * data_range) ** 2
+        C2 = (0.03 * data_range) ** 2
+
+        mu1 = F.conv2d(pred, window, padding=pad)
+        mu2 = F.conv2d(target, window, padding=pad)
+        mu1_sq, mu2_sq, mu1_mu2 = mu1 ** 2, mu2 ** 2, mu1 * mu2
+
+        sigma1_sq = F.conv2d(pred * pred, window, padding=pad) - mu1_sq
+        sigma2_sq = F.conv2d(target * target, window, padding=pad) - mu2_sq
+        sigma12 = F.conv2d(pred * target, window, padding=pad) - mu1_mu2
+
+        cs_map = (2 * sigma12 + C2) / (sigma1_sq + sigma2_sq + C2)
+        ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / \
+                   ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
+        return ssim_map.mean(), cs_map.mean()
+
+    def ms_ssim(self, pred, target, data_range=1.0, eps=1e-6):
+        """Multi-scale SSIM (Wang et al. 2003): contrast*structure at
+        successively 2x-downsampled scales, geometric-mean-combined with
+        full SSIM (incl. luminance) at the coarsest scale only -- luminance
+        is scale-invariant so it's wasteful/redundant to recompute it at
+        every level. Meant to be more robust than single-scale SSIM for
+        content with structure at multiple frequencies (fine texture +
+        coarse shapes at once), which single-scale SSIM's fixed 11x11
+        window can't see simultaneously.
+
+        Needs the input large enough for len(weights)-1 halvings to stay
+        >= the 11x11 window -- fine at this pipeline's fixed 256x256
+        (or 128x128) output resolution, not general-purpose for arbitrary
+        sizes.
+        """
+        pred_f, target_f = pred.float(), target.float()
+        weights = self._ms_ssim_weights
+        levels = weights.shape[0]
+
+        cs_vals = []
+        ssim_val = None
+        x, y = pred_f, target_f
+        for i in range(levels):
+            s, cs = self._ssim_and_cs(x, y, data_range=data_range)
+            cs_vals.append(cs.clamp(min=eps))
+            if i == levels - 1:
+                ssim_val = s.clamp(min=eps)
+            else:
+                x = F.avg_pool2d(x, kernel_size=2)
+                y = F.avg_pool2d(y, kernel_size=2)
+
+        cs_stack = torch.stack(cs_vals)  # (levels,)
+        # coarsest-scale full SSIM, times product of finer-scale contrast*structure
+        return ssim_val ** weights[-1] * torch.prod(cs_stack[:-1] ** weights[:-1])
+
+    def ms_ssim_loss(self, pred, target, data_range=1.0):
+        return 1.0 - self.ms_ssim(pred, target, data_range=data_range)
+
     def forward(self, pred, target):
         l_char = self.charbonnier_loss(pred, target)
         l_edge = self.edge_loss(pred, target)
@@ -204,6 +267,8 @@ class KLAMetrologyLoss(nn.Module):
             loss = loss + self.freq_weight * self.frequency_loss(pred, target)
         if self.ssim_weight > 0:
             loss = loss + self.ssim_weight * self.ssim_loss(pred, target)
+        if self.ms_ssim_weight > 0:
+            loss = loss + self.ms_ssim_weight * self.ms_ssim_loss(pred, target)
         return loss
 
 

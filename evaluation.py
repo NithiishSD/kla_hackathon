@@ -3,10 +3,11 @@ Evaluation script -- run after training finishes.
 
 What it does:
   1. Loads the best checkpoint.
-  2. Computes PSNR + SSIM over the held-out VALIDATION set (the only split
-     with ground truth besides train itself) -- reports overall mean/std,
-     plus the worst-N and best-N samples by PSNR, so you see the spread,
-     not just one averaged number.
+  2. Computes PSNR + SSIM + LPIPS over the held-out VALIDATION set (the
+     only split with ground truth besides train itself) -- reports
+     overall mean/std, plus the worst-N and best-N samples by PSNR, so
+     you see the spread, not just one averaged number. All three are the
+     metrics the actual KLA scoring uses.
   3. If any of your named difficulty samples (e.g. 000218, 000352, 000425)
      are findable in train or val, evaluates them individually and saves
      a side-by-side (input / prediction / ground truth) plot for each.
@@ -29,10 +30,12 @@ import torch.nn.functional as F
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import lpips
 
 from sem_dataset import SEMPairDataset, SEMTestDataset, load_calib_stats
 from model import SemiRestoreNet_V2
 from swinir_model import SwinIR
+from airnet_model import AirNet
 
 
 def build_model(cfg, device):
@@ -45,6 +48,12 @@ def build_model(cfg, device):
             embed_dim=cfg["embed_dim"], depths=cfg["depths"], num_heads=cfg["num_heads"],
             window_size=cfg["window_size"], mlp_ratio=cfg["mlp_ratio"],
             scale_factor=cfg["scale_factor"],
+        ).to(device)
+    if model_type == "airnet":
+        return AirNet(
+            dim=cfg["dim"], num_blocks=cfg["num_blocks"], feat_dim=cfg["feat_dim"],
+            proj_dim=cfg["proj_dim"], queue_size=cfg["queue_size"], momentum=cfg["momentum"],
+            temperature=cfg["temperature"], scale_factor=cfg["scale_factor"],
         ).to(device)
     return SemiRestoreNet_V2(
         dim=cfg["dim"], num_blocks=cfg["num_blocks"], scale_factor=cfg["scale_factor"],
@@ -87,6 +96,70 @@ def compute_ssim(pred, target, window_size=11, data_range=1.0):
     ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / \
                ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
     return ssim_map.mean().item()
+
+
+_MS_SSIM_WEIGHTS = (0.0448, 0.2856, 0.3001, 0.2363, 0.1333)  # Wang/Simoncelli/Bovik 2003
+
+
+def compute_ms_ssim(pred, target, window_size=11, data_range=1.0, eps=1e-6):
+    """Multi-scale SSIM: contrast*structure at 5 successively 2x-downsampled
+    scales, combined with full SSIM (incl. luminance) at the coarsest scale
+    only. More robust than single-scale SSIM for content with structure at
+    multiple frequencies at once (fine texture + coarse shape). Needs input
+    large enough for 4 halvings to stay >= window_size -- fine at this
+    pipeline's 256x256/128x128 resolutions."""
+    window = _gaussian_window(window_size, device=pred.device)
+    pad = window_size // 2
+    C1, C2 = (0.01 * data_range) ** 2, (0.03 * data_range) ** 2
+
+    cs_vals, ssim_val = [], None
+    x, y = pred, target
+    for i in range(len(_MS_SSIM_WEIGHTS)):
+        mu1 = F.conv2d(x, window, padding=pad)
+        mu2 = F.conv2d(y, window, padding=pad)
+        mu1_sq, mu2_sq, mu1_mu2 = mu1 ** 2, mu2 ** 2, mu1 * mu2
+        sigma1_sq = F.conv2d(x * x, window, padding=pad) - mu1_sq
+        sigma2_sq = F.conv2d(y * y, window, padding=pad) - mu2_sq
+        sigma12 = F.conv2d(x * y, window, padding=pad) - mu1_mu2
+
+        cs = ((2 * sigma12 + C2) / (sigma1_sq + sigma2_sq + C2)).mean().clamp(min=eps)
+        if i == len(_MS_SSIM_WEIGHTS) - 1:
+            ssim_val = (((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) /
+                        ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))).mean().clamp(min=eps)
+        else:
+            cs_vals.append(cs)
+            x, y = F.avg_pool2d(x, kernel_size=2), F.avg_pool2d(y, kernel_size=2)
+
+    weights = torch.tensor(_MS_SSIM_WEIGHTS, device=pred.device, dtype=pred.dtype)
+    cs_stack = torch.stack(cs_vals)
+    result = ssim_val ** weights[-1] * torch.prod(cs_stack ** weights[:-1])
+    return result.item()
+
+
+_lpips_net = None
+
+
+def _get_lpips_net(device):
+    """Lazy-loaded so importing this module doesn't always trigger the
+    ~230MB AlexNet weight download/load -- only the first actual call
+    does, and only in this diagnostics script, never in infer.py (the
+    timed submission script)."""
+    global _lpips_net
+    if _lpips_net is None:
+        _lpips_net = lpips.LPIPS(net='alex').to(device)
+        _lpips_net.eval()
+    return _lpips_net
+
+
+def compute_lpips(pred, target, device):
+    """LPIPS' backbone (AlexNet) was trained on RGB natural images -- there
+    is no single-channel variant, so grayscale is replicated to 3 channels.
+    normalize=True since pred/target are already in [0, 1], not [-1, 1]."""
+    net = _get_lpips_net(device)
+    pred3 = pred.repeat(1, 3, 1, 1)
+    target3 = target.repeat(1, 3, 1, 1)
+    with torch.no_grad():
+        return net(pred3, target3, normalize=True).item()
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +216,11 @@ def main():
     model.load_state_dict(ckpt["model_state"])
     model.eval()
 
+    # Tag output filenames by model_type -- otherwise running Restormer
+    # then SwinIR back to back silently overwrites the first run's PNGs
+    # (both write worst0_<name>.png into the same out_dir).
+    tag = cfg.get("model_type", "restormer")
+
     p_low, p_high = load_calib_stats(data_root)
 
     # ---- Held-out validation set: THE source of real PSNR/SSIM numbers ----
@@ -164,7 +242,7 @@ def main():
     )
 
     print(f"\nEvaluating on {len(val_subset)} held-out validation samples...")
-    results = []  # (psnr, ssim, filename)
+    results = []  # (psnr, ssim, ms_ssim, lpips, filename)
     with torch.no_grad():
         for idx in val_subset.indices:
             lr_img, gt_img = full_train[idx]
@@ -173,29 +251,37 @@ def main():
             pred = model(lr_img)
             psnr = compute_psnr(pred, gt_img)
             ssim = compute_ssim(pred, gt_img)
+            msssim = compute_ms_ssim(pred, gt_img)
+            lp = compute_lpips(pred, gt_img, device)
             fname = os.path.basename(full_train.pairs[idx][0])
-            results.append((psnr, ssim, fname))
+            results.append((psnr, ssim, msssim, lp, fname))
 
     psnrs = np.array([r[0] for r in results])
     ssims = np.array([r[1] for r in results])
+    msssims = np.array([r[2] for r in results])
+    lpipss = np.array([r[3] for r in results])
     print(f"\n=== Validation set summary (n={len(results)}) ===")
-    print(f"PSNR: mean={psnrs.mean():.2f}dB  std={psnrs.std():.2f}  "
+    print(f"PSNR:    mean={psnrs.mean():.2f}dB  std={psnrs.std():.2f}  "
           f"min={psnrs.min():.2f}  max={psnrs.max():.2f}")
-    print(f"SSIM: mean={ssims.mean():.4f}  std={ssims.std():.4f}  "
+    print(f"SSIM:    mean={ssims.mean():.4f}  std={ssims.std():.4f}  "
           f"min={ssims.min():.4f}  max={ssims.max():.4f}")
+    print(f"MS-SSIM: mean={msssims.mean():.4f}  std={msssims.std():.4f}  "
+          f"min={msssims.min():.4f}  max={msssims.max():.4f}")
+    print(f"LPIPS:   mean={lpipss.mean():.4f}  std={lpipss.std():.4f}  "
+          f"min={lpipss.min():.4f}  max={lpipss.max():.4f}  (lower is better)")
 
     results_sorted = sorted(results, key=lambda r: r[0])
     print(f"\nWorst 5 samples by PSNR (your weakest cases -- inspect these):")
-    for psnr, ssim, fname in results_sorted[:5]:
-        print(f"  {fname}: PSNR={psnr:.2f}dB, SSIM={ssim:.4f}")
+    for psnr, ssim, msssim, lp, fname in results_sorted[:5]:
+        print(f"  {fname}: PSNR={psnr:.2f}dB, SSIM={ssim:.4f}, MS-SSIM={msssim:.4f}, LPIPS={lp:.4f}")
     print(f"\nBest 5 samples by PSNR:")
-    for psnr, ssim, fname in results_sorted[-5:]:
-        print(f"  {fname}: PSNR={psnr:.2f}dB, SSIM={ssim:.4f}")
+    for psnr, ssim, msssim, lp, fname in results_sorted[-5:]:
+        print(f"  {fname}: PSNR={psnr:.2f}dB, SSIM={ssim:.4f}, MS-SSIM={msssim:.4f}, LPIPS={lp:.4f}")
 
     # Save plots for the worst 3 -- these are your real weak spots, worth
     # having visuals ready for the presentation.
     name_to_idx = {os.path.basename(full_train.pairs[i][0]): i for i in val_subset.indices}
-    for psnr, ssim, fname in results_sorted[:3]:
+    for psnr, ssim, msssim, lp, fname in results_sorted[:3]:
         idx = name_to_idx[fname]
         lr_img, gt_img = full_train[idx]
         with torch.no_grad():
@@ -204,8 +290,9 @@ def main():
                                mode='nearest').squeeze(0)
         save_comparison_plot(
             lr_up[0].numpy(), pred[0].numpy(), gt_img[0].numpy(),
-            title=f"{fname} (worst case: PSNR={psnr:.2f}dB, SSIM={ssim:.4f})",
-            out_path=os.path.join(out_dir, f"worst0_{fname.replace('.npy','')}.png"),
+            title=f"{fname} (worst case: PSNR={psnr:.2f}dB, SSIM={ssim:.4f}, "
+                  f"MS-SSIM={msssim:.4f}, LPIPS={lp:.4f})",
+            out_path=os.path.join(out_dir, f"worst0_{tag}_{fname.replace('.npy','')}.png"),
         )
     print(f"\nSaved worst-3 comparison plots to {out_dir}/")
 
@@ -224,14 +311,16 @@ def main():
             pred = model(lr_img.unsqueeze(0).to(device))
         psnr = compute_psnr(pred, gt_img.unsqueeze(0).to(device))
         ssim = compute_ssim(pred, gt_img.unsqueeze(0).to(device))
-        print(f"  {name} [{split}]: PSNR={psnr:.2f}dB, SSIM={ssim:.4f}")
+        msssim = compute_ms_ssim(pred, gt_img.unsqueeze(0).to(device))
+        lp = compute_lpips(pred, gt_img.unsqueeze(0).to(device), device)
+        print(f"  {name} [{split}]: PSNR={psnr:.2f}dB, SSIM={ssim:.4f}, MS-SSIM={msssim:.4f}, LPIPS={lp:.4f}")
         if idx in val_subset.indices:
             lr_up = F.interpolate(lr_img.unsqueeze(0), scale_factor=cfg["scale_factor"],
                                    mode='nearest').squeeze(0)
             save_comparison_plot(
                 lr_up[0].numpy(), pred.squeeze(0)[0].cpu().numpy(), gt_img[0].numpy(),
                 title=f"{name} [{split}]: PSNR={psnr:.2f}dB",
-                out_path=os.path.join(out_dir, f"named_{name.replace('.npy','')}.png"),
+                out_path=os.path.join(out_dir, f"named_{tag}_{name.replace('.npy','')}.png"),
             )
         else:
             print(f"    (in training set -- this number reflects fit, not "
@@ -250,7 +339,7 @@ def main():
         save_comparison_plot(
             lr_up[0].numpy(), pred[0].numpy(), None,
             title=f"TEST (no GT): {fname}",
-            out_path=os.path.join(out_dir, f"test_{fname.replace('.npy','')}.png"),
+            out_path=os.path.join(out_dir, f"test_{tag}_{fname.replace('.npy','')}.png"),
         )
     print(f"Saved {n_show} test-set prediction visuals to {out_dir}/ "
           f"(no numeric score possible -- eyeball these for artifacts, "
