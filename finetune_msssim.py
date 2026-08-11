@@ -41,32 +41,30 @@ def main():
           f"(epoch {ckpt['epoch']+1}, val_psnr={ckpt['val_psnr']:.2f}dB)")
 
     config = dict(
-        dim=64,
-        num_blocks=2,
-        batch_size=4,
-        target_batch_size=32,
-        scale_factor=2,
-        
-        # Loss weights — SSIM-dominant, NO CD LOSS
-        edge_weight=0.5,          # Sobel edge (mild)
-        freq_weight=0.15,         # Fourier unit supervision
-        ssim_weight=1.2,          # MS-SSIM: strong structural signal
-        charbonnier_weight=0.5,   # Pixel fidelity
-        
-        lr=3e-05,
-        weight_decay=1e-06,
-        scheduler_patience=3,
-        early_stop_patience=7,
-        num_workers=min(8, os.cpu_count() or 1),
-        num_epochs=25,
-        use_compile=False,
-        checkpoint_dir="./checkpoints_msssim_v1",
-        
-        # MS-SSIM settings
-        use_multiscale_ssim=True,
-        ms_ssim_scales=[1.0, 0.5, 0.25],
-        ms_ssim_weights=[0.5, 0.3, 0.2],
-    )
+    dim=64,
+    num_blocks=2,
+    batch_size=4,
+    target_batch_size=32,
+    scale_factor=2,
+    
+    edge_weight=0.5,          # Unchanged
+    freq_weight=0.0,          # Unchanged
+    ssim_weight=0.15,         # Only change — conservative MS-SSIM
+    charbonnier_weight=1.0,   # Unchanged
+    
+    lr=2e-04,                 # Unchanged
+    weight_decay=1e-04,       # Unchanged
+    scheduler_patience=5,     # Unchanged
+    early_stop_patience=10,   # Unchanged
+    num_workers=8,
+    num_epochs=20,
+    use_compile=False,
+    checkpoint_dir="./checkpoints_msssim_v2",
+    
+    use_multiscale_ssim=True,
+    ms_ssim_scales=[1.0, 0.5, 0.25],
+    ms_ssim_weights=[0.5, 0.3, 0.2],
+)
 
     print("=== PHASE 4: MS-SSIM STRUCTURAL RECOVERY ===")
     print("Config:", config)
