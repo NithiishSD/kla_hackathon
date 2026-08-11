@@ -127,7 +127,23 @@ class SemiRestoreNet_V2(nn.Module):
 
         return torch.clamp((out + base) * self.metrology_gain, 0.0, 1.0)
 
-
+class VGGEdgeLoss(nn.Module):
+    """Perceptual loss using VGG16 early layers for edge sensitivity."""
+    def __init__(self, device='cuda'):
+        super().__init__()
+        from torchvision import models
+        vgg = models.vgg16(weights=models.VGG16_Weights.IMAGENET1K_V1).features[:6]
+        for param in vgg.parameters():
+            param.requires_grad = False
+        self.vgg = vgg.to(device)
+        self.vgg.eval()
+    
+    def forward(self, pred, target):
+        pred_rgb = pred.repeat(1, 3, 1, 1)
+        target_rgb = target.repeat(1, 3, 1, 1)
+        pred_feat = self.vgg(pred_rgb)
+        target_feat = self.vgg(target_rgb)
+        return F.l1_loss(pred_feat, target_feat)
 # ---------------------------------------------------------------------------
 # Loss
 # ---------------------------------------------------------------------------
@@ -250,16 +266,15 @@ class KLAMetrologyLoss(nn.Module):
 
     def forward(self, pred, target):
         l_char = self.charbonnier_weight * self.charbonnier_loss(pred, target)
+        loss = l_char
         
-        # Edge loss: profile > CD > Sobel (priority order)
-        if self.use_profile_loss and self.profile_loss is not None:
-            l_edge = self.profile_loss(pred, target)
-        elif self.use_cd_loss and self.cd_loss is not None:
-            l_edge = self.cd_loss(pred, target)
-        else:
-            l_edge = self.edge_loss(pred, target)
-        
-        loss = l_char + self.edge_weight * l_edge
+        # Only compute edge loss if weight > 0
+        if self.edge_weight > 0:
+            if self.use_cd_loss and self.cd_loss is not None:
+                l_edge = self.cd_loss(pred, target)
+            else:
+                l_edge = self.edge_loss(pred, target)
+            loss = loss + self.edge_weight * l_edge
         
         if self.freq_weight > 0:
             loss = loss + self.freq_weight * self.frequency_loss(pred, target)
