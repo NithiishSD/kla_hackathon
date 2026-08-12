@@ -34,9 +34,9 @@ def main():
     data_root = sys.argv[1] if len(sys.argv) > 1 else "./data"
 
     config = dict(
-        dim=64,
-        num_blocks=2,            # CHANGE vs Phase 2: safe default, not 3
-        batch_size=4,
+        dim=96,
+        num_blocks=4,            # CHANGE vs Phase 2: safe default, not 3
+        batch_size=2,
         target_batch_size=32,
         scale_factor=2,
         edge_weight=0.5,         # CHANGE vs Phase 2: safe default, not 0.8
@@ -47,9 +47,9 @@ def main():
         scheduler_patience=3,
         early_stop_patience=7,
         num_workers=min(8, os.cpu_count() or 1),
-        num_epochs=50,
+        num_epochs=100,
         use_compile=False,
-        checkpoint_dir="./checkpoints_baseline_v2",  # separate from Phase 2
+        checkpoint_dir="./checkpoints_baseline_scale_v1",  # separate from Phase 2
     )
     print("=== BASELINE ABLATION RUN ===")
     print("Config:", config)
