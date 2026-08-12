@@ -129,3 +129,50 @@ Done. Detailed visuals and summary in ./eval_outputs_cd_v2/
 
 
 now doing CD Baseline Test:
+
+
+
+
+
+
+
+
+
+test completed 
+
+
+
+baseline_v2 evaluation:
+Evaluating on 320 held-out validation samples...
+
+=== Validation set summary (n=320) ===
+PSNR: mean=29.54dB  std=4.64  min=12.50  max=45.66
+SSIM: mean=0.7873  std=0.1473  min=0.3008  max=0.9796
+
+Worst 5 samples by PSNR:
+  002982.npy: PSNR=12.50dB, SSIM=0.3140
+  001908.npy: PSNR=19.46dB, SSIM=0.4064
+  000108.npy: PSNR=20.59dB, SSIM=0.6761
+  001387.npy: PSNR=20.69dB, SSIM=0.8045
+  001315.npy: PSNR=20.76dB, SSIM=0.6604
+
+Best 5 samples by PSNR:
+  001082.npy: PSNR=40.12dB, SSIM=0.9467
+  002217.npy: PSNR=40.69dB, SSIM=0.9628
+  003117.npy: PSNR=42.38dB, SSIM=0.9608
+  002225.npy: PSNR=43.52dB, SSIM=0.9680
+  001827.npy: PSNR=45.66dB, SSIM=0.9652
+
+=== Named Difficulty Samples ===
+  000218.npy: PSNR=32.22dB, SSIM=0.8600
+  000352.npy: PSNR=12.60dB, SSIM=0.3213
+  000425.npy: PSNR=34.79dB, SSIM=0.8933
+
+=============================================
+        FINAL METROLOGY SCORECARD
+=============================================
+Mean CD Bias:   -14.459 px
+Mean LER Error: 22.811 px
+Mean LWR Error: 25.227 px
+Slope Fidelity: 76.6 %
+=============================================
