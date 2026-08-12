@@ -36,7 +36,7 @@ def main():
     config = dict(
         dim=96,
         num_blocks=4,            # CHANGE vs Phase 2: safe default, not 3
-        batch_size=2,
+        batch_size=4,            # CHANGE: 32 OOMs at dim=96/num_blocks=4 on this 8GB GPU (tried to alloc 14.34GB) -- accumulate to the same effective 32 instead
         target_batch_size=32,
         scale_factor=2,
         edge_weight=0.5,         # CHANGE vs Phase 2: safe default, not 0.8

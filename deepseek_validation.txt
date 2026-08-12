@@ -312,3 +312,74 @@ Created a distance-transform-based loss that penalizes edge misalignment in pixe
 ### The Solution
 
 The -15 px CD bias should be treated as a **calibration offset**. It's consistent across all experiments (-14.74 to -17.26), so subtracting it from metrology measurements gives accurate results. This is standard practice in real CD-SEM tools where different algorithms produce different absolute values — what matters is precision and repeatability, not absolute agreement with a specific threshold definition.
+
+---
+
+### Chapter 11: TTA and IntensityProfileLoss (Claude Code session)
+
+**The Ask:** Cross-checked this file against a scale-up run in progress
+(dim=96/num_blocks=4, 100 epochs, queued after the user noted "even after
+scaling the increases in accuracy was very low"). Chapter 9's scale_v1
+result (dim=128/num_blocks=4: +0.5dB PSNR, CD bias unchanged) already
+answered that question -- the queued run was retesting an answered
+hypothesis and was killed before completion. Picked two of the
+"Tools Explored But Not Tested" list (Chapter 10) instead: Test-Time
+Augmentation and IntensityProfileLoss.
+
+**Finding: IntensityProfileLoss did not actually exist.** `finetune_profile.py`
+declared `use_profile_loss`/`num_profiles`/`profile_width` config keys that
+were never read anywhere in the script -- the loss it actually built was
+plain SSIM. Implemented for real in `losses/intensity_profile_loss.py`.
+
+**Experiment 1 -- TTA (8-view D4 dihedral average), zero retraining, against
+baseline_v2:**
+
+| Metric | Plain | TTA (8-view avg) | Delta |
+|--------|-------|-------------------|-------|
+| PSNR | 29.54 | 29.77 | +0.24 dB |
+| SSIM | 0.7873 | 0.7931 | +0.006 |
+| CD Bias | -14.454 | -15.213 | **-0.76 px (worse)** |
+| LER Error | 22.811 | 24.223 | +1.41 px (worse) |
+| LWR Error | 25.218 | 26.831 | +1.61 px (worse) |
+| Slope Fidelity | 76.6% | 74.1% | -2.5 pts (worse) |
+
+**Finding: TTA helps generic PSNR/SSIM slightly (expected -- averaging
+reduces variance) but makes the metrology metrics worse.** The edge-slope
+distortion isn't asymmetric enough under D4 transforms for averaging to
+cancel it; averaging just smooths the edge, which is the wrong direction
+for a slope-shape problem. Not adopted.
+
+**Experiment 2 -- IntensityProfileLoss fine-tune from baseline_v2.**
+Design deliberately different from the failed ThresholdedCDLoss (Chapter 3):
+masks by a GT-only, detached edge map (fixed, not influenced by the
+model's own predictions), so there's no "spam edges everywhere" degenerate
+minimum available -- the model can only reduce the loss by matching the
+actual gradient-magnitude VALUE at true edge locations, not by changing
+which pixels get penalized. `profile_weight=1.0` (conservative first pass,
+given 6/6 prior loss additions on this branch made things worse or
+collapsed). Smoke-tested for stability (10 real steps, no blowup) before
+committing to the full 15-epoch run.
+
+| Metric | baseline_v2 | profile_v1 (weight=1.0) | Delta |
+|--------|-------------|--------------------------|-------|
+| PSNR | 29.54 | 29.21 | -0.33 dB |
+| SSIM | 0.7873 | 0.7799 | -0.0074 |
+| **CD Bias** | **-14.454** | **-8.594** | **+5.86 px closer to zero (40% reduction)** |
+| **LER Error** | 22.811 | 18.670 | **-4.14 px (18% better)** |
+| **LWR Error** | 25.218 | 19.421 | **-5.80 px (23% better)** |
+| **Slope Fidelity** | 76.6% | 82.6% | **+6.0 pts** |
+
+**Finding: this is the first approach (out of 7 tried across both this
+project's history and a parallel branch's SwinIR/AirNet comparison) that
+actually moves CD Bias substantially in the right direction without
+collapsing PSNR/SSIM or flipping the bias sign.** Slope Fidelity improving
+alongside CD Bias/LER/LWR is a direct confirmation of the Chapter 8
+diagnosis -- the problem really is edge-slope shape, not edge position,
+and a loss that targets slope shape at fixed GT locations (rather than
+predicted-edge position, which is what every prior loss-based attempt
+used) is what finally moves it. Training was stable throughout (no
+collapse, val_loss still gently improving at epoch 15) -- profile_weight=1.0
+was a deliberately conservative starting point, not a tuned optimum.
+
+**Next:** testing a higher profile_weight to see how far CD Bias can be
+pushed and where the PSNR/SSIM cost becomes unacceptable.

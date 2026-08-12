@@ -2,7 +2,7 @@ env/*
 *.exe
 data/test/*
 data/train/*
-
+data/*
 pycache/*
 *.pyc
 

@@ -116,7 +116,13 @@ def main():
         return
 
     data_root, ckpt_path = sys.argv[1], sys.argv[2]
-    out_dir = "./eval_outputs_baseline_scale_v1"
+    # Derived from the checkpoint dir, not hardcoded -- a fixed name here
+    # meant every run overwrote the same folder regardless of which
+    # checkpoint was evaluated, silently clobbering prior results (this
+    # is how baseline_scale_v1's historical eval visuals got overwritten
+    # by a later profile_v1 run).
+    ckpt_tag = os.path.basename(os.path.dirname(os.path.abspath(ckpt_path))) or "eval"
+    out_dir = f"./eval_outputs_{ckpt_tag}"
     os.makedirs(out_dir, exist_ok=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
