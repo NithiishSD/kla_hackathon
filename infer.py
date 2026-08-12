@@ -34,7 +34,7 @@ from model import SemiRestoreNet_V2
 # ---------------------------------------------------------------------
 # ONE-TIME EDIT before submission: point this at your final checkpoint.
 # ---------------------------------------------------------------------
-CHECKPOINT_PATH = "./checkpoints_hard_oversample/best_model.pt"  # <-- EDIT THIS ONCE before submission
+CHECKPOINT_PATH = "./checkpoints_baseline_v2/best_model.pt"  # <-- EDIT THIS ONCE before submission
 
 
 def load_model(checkpoint_path, device):
