@@ -37,6 +37,10 @@ def compute_psnr(pred, target, max_val=1.0):
 
 def main():
     data_root = sys.argv[1] if len(sys.argv) > 1 else "./data"
+    # profile_weight is a CLI override (default 1.0, the already-run and
+    # documented "v1" case) rather than a hardcoded second near-duplicate
+    # script -- lets a weight sweep reuse this same file.
+    profile_weight = float(sys.argv[2]) if len(sys.argv) > 2 else 1.0
     base_ckpt_path = "checkpoints_baseline_v2/best_model.pt"
 
     if not torch.cuda.is_available():
@@ -49,17 +53,18 @@ def main():
     print(f"Resuming from {base_ckpt_path} "
           f"(epoch {ckpt['epoch']+1}, val_psnr={ckpt['val_psnr']:.2f}dB)")
 
+    weight_tag = str(profile_weight).replace(".", "p")
     config = dict(
         dim=base_cfg["dim"], num_blocks=base_cfg["num_blocks"], scale_factor=base_cfg["scale_factor"],
         batch_size=4, target_batch_size=32,
         edge_weight=0.5, freq_weight=0.0, ssim_weight=0.0,
-        profile_weight=1.0,   # NEW -- conservative starting weight, not the "nuclear option"
+        profile_weight=profile_weight,
         profile_edge_percentile=85.0,
         lr=5e-5, weight_decay=1e-4,
         scheduler_patience=2, early_stop_patience=5,
         num_workers=min(8, os.cpu_count() or 1),
         num_epochs=15,
-        checkpoint_dir="./checkpoints_profile_v1",
+        checkpoint_dir=f"./checkpoints_profile_w{weight_tag}",
         finetune_from=base_ckpt_path,
     )
     print("=== PROFILE-LOSS FINE-TUNE ===")
