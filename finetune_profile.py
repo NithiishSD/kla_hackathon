@@ -60,11 +60,11 @@ def main():
         edge_weight=0.5, freq_weight=0.0, ssim_weight=0.0,
         profile_weight=profile_weight,
         profile_edge_percentile=85.0,
-        lr=5e-5, weight_decay=1e-4,
+        lr=1e-5, weight_decay=1e-4,
         scheduler_patience=2, early_stop_patience=5,
         num_workers=min(8, os.cpu_count() or 1),
         num_epochs=15,
-        checkpoint_dir=f"./checkpoints_profile_w{weight_tag}",
+        checkpoint_dir=f"./checkpoints_profile_w_lr{weight_tag}",
         finetune_from=base_ckpt_path,
     )
     print("=== PROFILE-LOSS FINE-TUNE ===")

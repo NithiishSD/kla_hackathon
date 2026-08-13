@@ -356,3 +356,231 @@ Mean LER Error: 18.669 px
 Mean LWR Error: 19.420 px
 Slope Fidelity: 82.6 %
 =============================================
+
+
+
+p2p0:
+
+
+
+Evaluating on 320 held-out validation samples...
+
+=== Validation set summary (n=320) ===
+PSNR: mean=28.80dB  std=4.54  min=12.01  max=44.24
+SSIM: mean=0.7631  std=0.1490  min=0.3009  max=0.9694
+
+Worst 5 samples by PSNR:
+  002982.npy: PSNR=12.01dB, SSIM=0.3213
+  001908.npy: PSNR=19.98dB, SSIM=0.5056
+  000108.npy: PSNR=20.09dB, SSIM=0.6703
+  001387.npy: PSNR=20.19dB, SSIM=0.7908
+  001315.npy: PSNR=20.24dB, SSIM=0.6500
+
+Best 5 samples by PSNR:
+  003117.npy: PSNR=38.47dB, SSIM=0.8973
+  002460.npy: PSNR=38.57dB, SSIM=0.9382
+  002217.npy: PSNR=40.17dB, SSIM=0.9586
+  002225.npy: PSNR=42.47dB, SSIM=0.9499
+  001827.npy: PSNR=44.24dB, SSIM=0.9482
+
+=== Named Difficulty Samples ===
+  000218.npy: PSNR=31.47dB, SSIM=0.8260
+  000352.npy: PSNR=12.11dB, SSIM=0.3304
+  000425.npy: PSNR=34.29dB, SSIM=0.8982
+
+=============================================
+        FINAL METROLOGY SCORECARD
+=============================================
+Mean CD Bias:   -3.861 px
+Mean LER Error: 17.776 px
+Mean LWR Error: 18.272 px
+Slope Fidelity: 84.7 %
+=============================================
+
+=== Processing Test Set (no GT) ===
+[SEMTestDataset] 400 test samples found.
+
+Done. Detailed visuals and summary in ./eval_outputs_checkpoints_profile_w2p0/
+
+
+
+w_edhe3p0:edge=0
+
+
+Loaded checkpoint: epoch 15, val_psnr=26.00dB
+Setting up [LPIPS] perceptual loss: trunk [alex], v[0.1], spatial [off]
+/home/nithiish/Documents/kla_hackathon/.conda/lib/python3.12/site-packages/torchvision/models/_utils.py:207: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+/home/nithiish/Documents/kla_hackathon/.conda/lib/python3.12/site-packages/torchvision/models/_utils.py:222: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=AlexNet_Weights.IMAGENET1K_V1`. You can also use `weights=AlexNet_Weights.DEFAULT` to get the most up-to-date weights.
+  warnings.warn(msg)
+Loading model from: /home/nithiish/Documents/kla_hackathon/.conda/lib/python3.12/site-packages/lpips/weights/v0.1/alex.pth
+[SEMPairDataset] 3200 paired samples found.
+
+Evaluating on 320 held-out validation samples...
+
+=== Validation set summary (n=320) ===
+PSNR: mean=27.64dB  std=4.77  min=10.05  max=43.95
+SSIM: mean=0.7122  std=0.1630  min=0.2390  max=0.9672
+
+Worst 5 samples by PSNR:
+  002982.npy: PSNR=10.05dB, SSIM=0.2999
+  000641.npy: PSNR=18.64dB, SSIM=0.3603
+  000108.npy: PSNR=18.80dB, SSIM=0.6278
+  001334.npy: PSNR=18.85dB, SSIM=0.3612
+  001387.npy: PSNR=18.90dB, SSIM=0.7527
+
+Best 5 samples by PSNR:
+  000823.npy: PSNR=37.98dB, SSIM=0.9261
+  002460.npy: PSNR=38.31dB, SSIM=0.9335
+  002217.npy: PSNR=39.63dB, SSIM=0.9503
+  002225.npy: PSNR=42.00dB, SSIM=0.9500
+  001827.npy: PSNR=43.95dB, SSIM=0.9504
+
+=== Named Difficulty Samples ===
+  000218.npy: PSNR=30.15dB, SSIM=0.7416
+  000352.npy: PSNR=10.14dB, SSIM=0.3064
+  000425.npy: PSNR=33.93dB, SSIM=0.8883
+
+=============================================
+        FINAL METROLOGY SCORECARD
+=============================================
+Mean CD Bias:   5.613 px
+Mean LER Error: 16.534 px
+Mean LWR Error: 17.839 px
+Slope Fidelity: 89.6 %
+=============================================
+
+=== Processing Test Set (no GT) ===
+[SEMTestDataset] 400 test samples found.
+
+Done. Detailed visuals and summary in ./eval_outputs_checkpoints_profile_w_edge3p0/
+
+
+
+
+
+Evaluating on 320 held-out validation samples...
+
+=== Validation set summary (n=320) ===
+PSNR: mean=28.63dB  std=4.51  min=11.95  max=43.96
+SSIM: mean=0.7590  std=0.1488  min=0.3037  max=0.9692
+
+Worst 5 samples by PSNR:
+  002982.npy: PSNR=11.95dB, SSIM=0.3254
+  000108.npy: PSNR=20.00dB, SSIM=0.6698
+  001908.npy: PSNR=20.00dB, SSIM=0.5186
+  001387.npy: PSNR=20.13dB, SSIM=0.7933
+  001315.npy: PSNR=20.20dB, SSIM=0.6533
+
+Best 5 samples by PSNR:
+  002506.npy: PSNR=38.35dB, SSIM=0.9371
+  002460.npy: PSNR=38.36dB, SSIM=0.9371
+  002217.npy: PSNR=39.99dB, SSIM=0.9570
+  002225.npy: PSNR=42.22dB, SSIM=0.9508
+  001827.npy: PSNR=43.96dB, SSIM=0.9500
+
+=== Named Difficulty Samples ===
+  000218.npy: PSNR=31.44dB, SSIM=0.8252
+  000352.npy: PSNR=12.04dB, SSIM=0.3335
+  000425.npy: PSNR=34.26dB, SSIM=0.8954
+
+=============================================
+        FINAL METROLOGY SCORECARD
+=============================================
+Mean CD Bias:   -1.718 px
+Mean LER Error: 16.693 px
+Mean LWR Error: 16.821 px
+Slope Fidelity: 88.1 %
+=============================================
+
+=== Processing Test Set (no GT) ===
+[SEMTestDataset] 400 test samples found.
+
+Done. Detailed visuals and summary in ./eval_outputs_checkpoints_profile_w_lr3p0/
+
+
+
+
+
+
+ensemble testing:
+
+Evaluating ensemble on 320 held-out validation samples...
+
+=== Ensemble validation summary (n=320) ===
+PSNR: mean=29.24dB  std=4.61  min=12.28  max=45.04
+SSIM: mean=0.7798  std=0.1458  min=0.3205  max=0.9769
+
+Worst 5 samples by PSNR:
+  002982.npy: PSNR=12.28dB, SSIM=0.3233
+  001908.npy: PSNR=19.84dB, SSIM=0.4745
+  000108.npy: PSNR=20.35dB, SSIM=0.6762
+  001387.npy: PSNR=20.48dB, SSIM=0.8014
+  001315.npy: PSNR=20.54dB, SSIM=0.6604
+
+Best 5 samples by PSNR:
+  001082.npy: PSNR=39.46dB, SSIM=0.9325
+  003117.npy: PSNR=40.02dB, SSIM=0.9280
+  002217.npy: PSNR=40.63dB, SSIM=0.9630
+  002225.npy: PSNR=43.13dB, SSIM=0.9631
+  001827.npy: PSNR=45.04dB, SSIM=0.9606
+
+=== Named Difficulty Samples ===
+  000218.npy: PSNR=32.03dB, SSIM=0.8527
+  000352.npy: PSNR=12.38dB, SSIM=0.3312
+  000425.npy: PSNR=34.80dB, SSIM=0.9030
+
+=============================================
+     ENSEMBLE METROLOGY SCORECARD
+=============================================
+Mean CD Bias:   -8.524 px
+Mean LER Error: 19.028 px
+Mean LWR Error: 20.434 px
+Slope Fidelity: 81.2 %
+=============================================
+
+=== Processing Test Set (no GT) ===
+[SEMTestDataset] 400 test samples found.
+
+Done. Detailed visuals and summary in ./eval_outputs_ensemble_checkpoints_baseline_v2_checkpoints_profile_w_lr3p0/
+
+
+
+
+
+=== Ensemble validation summary (n=320) ===
+PSNR: mean=28.96dB  std=4.55  min=12.11  max=44.30
+SSIM: mean=0.7715  std=0.1468  min=0.3139  max=0.9726
+
+Worst 5 samples by PSNR:
+  002982.npy: PSNR=12.11dB, SSIM=0.3278
+  001908.npy: PSNR=19.87dB, SSIM=0.4894
+  000108.npy: PSNR=20.19dB, SSIM=0.6741
+  001387.npy: PSNR=20.32dB, SSIM=0.7976
+  001315.npy: PSNR=20.37dB, SSIM=0.6560
+
+Best 5 samples by PSNR:
+  002460.npy: PSNR=38.55dB, SSIM=0.9394
+  002506.npy: PSNR=38.74dB, SSIM=0.9443
+  002217.npy: PSNR=40.23dB, SSIM=0.9597
+  002225.npy: PSNR=42.53dB, SSIM=0.9550
+  001827.npy: PSNR=44.30dB, SSIM=0.9535
+
+=== Named Difficulty Samples ===
+  000218.npy: PSNR=31.72dB, SSIM=0.8404
+  000352.npy: PSNR=12.21dB, SSIM=0.3363
+  000425.npy: PSNR=34.40dB, SSIM=0.8994
+
+=============================================
+     ENSEMBLE METROLOGY SCORECARD
+=============================================
+Mean CD Bias:   -5.299 px
+Mean LER Error: 17.687 px
+Mean LWR Error: 17.467 px
+Slope Fidelity: 85.1 %
+=============================================
+
+=== Processing Test Set (no GT) ===
+[SEMTestDataset] 400 test samples found.
+
+Done. Detailed visuals and summary in ./eval_outputs_ensemble_checkpoints_profile_v1_checkpoints_profile_w_lr3p0/
