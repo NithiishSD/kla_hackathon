@@ -64,7 +64,7 @@ def main():
         scheduler_patience=2, early_stop_patience=5,
         num_workers=min(8, os.cpu_count() or 1),
         num_epochs=15,
-        checkpoint_dir=f"./checkpoints_profile_w_lr{weight_tag}",
+        checkpoint_dir=f"./checkpoints",
         finetune_from=base_ckpt_path,
     )
     print("=== PROFILE-LOSS FINE-TUNE ===")
