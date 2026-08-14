@@ -1,8 +1,10 @@
 """
-KLA PS01 Submission -- Standalone Inference Script
-====================================================
+KLA PS01 Submission -- Evaluation Script (Component 2, mandatory)
+====================================================================
+This IS the benchmarking entry point KLA's team will run AS-IS.
+
 Usage:
-    python inference.py <path_to_test_images_dir> <path_to_output_dir>
+    python evaluate.py <path_to_test_images_dir> <path_to_output_dir>
 
 Loads the trained SemiRestoreNet_V2 model (weights bundled in this repo
 under ./weights/final_model.pt) and runs inference on every .npy image

@@ -1,15 +1,29 @@
 # TeamName - KLA PS01
 
 ## Setup
+
+```bash
 pip install -r requirements.txt
+```
 
-## Inference
-python inference.py <path_to_test_images> <path_to_output_dir>
+## Evaluation
 
-## Training (reproduce from scratch)
+```bash
+python evaluate.py <path_to_test_images_dir> <path_to_output_dir>
+```
+
+## Training
+
+```bash
 python train.py <path_to_data_root>
+```
 
-## Final model
-weights/final_model.pt -- SemiRestoreNet_V2, dim=64, num_blocks=2,
-scale_factor=2, fine-tuned with IntensityProfileLoss (weight=3.0),
-edge_weight=0.5, lr=1e-5. See training log / report for full ablation history.
+`data_root/` must contain:
+```
+data_root/
+├── train/
+│   ├── gt/*.npy
+│   └── NoisyLR/*.npy
+└── test/*.npy
+```
+

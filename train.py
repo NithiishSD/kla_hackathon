@@ -36,15 +36,74 @@ non-determinism). See README.md for details.
 """
 
 import argparse
+import glob
+import json
 import os
 import time
 
+import numpy as np
 import torch
 
 from sem_dataset import build_dataloaders, load_calib_stats
 from model import SemiRestoreNet_V2, KLAMetrologyLoss, build_optimizer
 from train_engine import HardwareEngine
 from losses.intensity_profile_loss import IntensityProfileLoss
+
+
+def ensure_calib_stats(data_root, p_low_pct=1.0, p_high_pct=99.0):
+    """Computes calib_stats.json automatically if it doesn't already exist,
+    so train.py is fully self-contained -- no separate calibrate_stats.py
+    run required before this script.
+
+    Scans every .npy file under train/gt and train/NoisyLR, pools all pixel
+    values, and computes the p_low_pct/p_high_pct percentiles across that
+    pool. This mirrors the normalization scheme in sem_dataset.py's
+    normalize() (p_low -> 0, p_high -> 1, clamp outside that range) and the
+    1.0/99.0 percentile convention already recorded in this project's
+    existing calib_stats.json.
+
+    If you have the original calibrate_stats.py and it computes stats
+    differently (e.g. GT-only, or a different percentile method), swap this
+    function out for that logic instead -- what matters is that whatever
+    computed the calib_stats.json baked into your existing checkpoints is
+    exactly what's used here, so new runs stay comparable to your logged
+    results.
+    """
+    calib_path = os.path.join(data_root, "calib_stats.json")
+    if os.path.exists(calib_path):
+        print(f"Found existing {calib_path}, reusing it.")
+        return
+
+    print(f"No calib_stats.json found at {calib_path} -- computing it now "
+          f"from train/gt and train/NoisyLR ({p_low_pct}th/{p_high_pct}th percentile)...")
+
+    gt_files = glob.glob(os.path.join(data_root, "train", "gt", "*.npy"))
+    lr_files = glob.glob(os.path.join(data_root, "train", "NoisyLR", "*.npy"))
+    all_files = gt_files + lr_files
+    if not all_files:
+        raise FileNotFoundError(
+            f"No .npy files found under {data_root}/train/gt or "
+            f"{data_root}/train/NoisyLR -- cannot compute calibration stats."
+        )
+
+    # Pool pixel values across all files. For large datasets this can use
+    # significant RAM; if that becomes a problem, switch to an online/
+    # streaming percentile estimate (e.g. a running histogram) instead.
+    all_pixels = []
+    for f in all_files:
+        arr = np.load(f).astype(np.float32).reshape(-1)
+        all_pixels.append(arr)
+    pooled = np.concatenate(all_pixels)
+
+    p_low = float(np.percentile(pooled, p_low_pct))
+    p_high = float(np.percentile(pooled, p_high_pct))
+
+    stats = {"p_low": p_low, "p_high": p_high,
+              "p_low_pct": p_low_pct, "p_high_pct": p_high_pct}
+    with open(calib_path, "w") as f:
+        json.dump(stats, f, indent=2)
+
+    print(f"Computed and saved calib_stats.json: p_low={p_low:.6f}, p_high={p_high:.6f}")
 
 
 def compute_psnr(pred, target, max_val=1.0):
@@ -188,7 +247,7 @@ def train_finetune(data_root, p_low, p_high, train_loader, val_loader,
         scheduler_patience=2, early_stop_patience=5,
         num_workers=min(8, os.cpu_count() or 1),
         num_epochs=15,
-        checkpoint_dir=f"./checkpoints_profile_w_lr{weight_tag}",
+        checkpoint_dir=f"./weights",
         finetune_from=base_ckpt_path,
     )
     print("\n" + "=" * 60)
@@ -235,6 +294,7 @@ def main():
     if not torch.cuda.is_available():
         print("WARNING: no CUDA device found. Training will be very slow on CPU.")
 
+    ensure_calib_stats(args.data_root)
     p_low, p_high = load_calib_stats(args.data_root)
     train_loader, val_loader, test_loader = build_dataloaders(
         args.data_root, scale_factor=2, batch_size=4,
