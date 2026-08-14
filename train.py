@@ -43,13 +43,201 @@ import time
 
 import numpy as np
 import torch
-
+import torch.nn as nn
+import torch.nn.functional as F
 from sem_dataset import build_dataloaders, load_calib_stats
 from model import SemiRestoreNet_V2, KLAMetrologyLoss, build_optimizer
-from train_engine import HardwareEngine
-from losses.intensity_profile_loss import IntensityProfileLoss
 
 
+
+
+class GradAccumState:
+    """Tracks micro-batch position for gradient accumulation across the
+    whole training run (not reset per epoch)."""
+
+    def __init__(self, accum_steps):
+        self.accum_steps = accum_steps
+        self.micro_step = 0
+        self.pending = False  # accumulated grads waiting on a step
+
+    def should_zero_grad(self):
+        return self.micro_step % self.accum_steps == 0
+
+    def after_backward(self):
+        self.micro_step += 1
+        self.pending = True
+        do_step = (self.micro_step % self.accum_steps == 0)
+        if do_step:
+            self.pending = False
+        return do_step
+
+    def flush_needed(self):
+        return self.pending
+
+
+class HardwareEngine:
+    def __init__(self, model, batch_size, target_batch_size=32, device="cuda"):
+        """
+        batch_size: the ACTUAL batch_size your DataLoader yields (i.e. what
+            you passed to build_dataloaders / DataLoader(..., batch_size=X)).
+            This is the single source of truth for accumulation math --
+            there is no separate "local_batch_size" concept with
+            DataParallel, since one train_step already gets the full
+            DataLoader batch regardless of GPU count.
+        target_batch_size: the effective batch size you want to simulate
+            via accumulation.
+        """
+        self.device = torch.device(device)
+        self.gpu_name = torch.cuda.get_device_name(0)
+        self.major, self.minor = torch.cuda.get_device_capability(0)
+        self.num_gpus = torch.cuda.device_count()
+
+        if self.major >= 8:
+            self.precision = torch.bfloat16
+            self.use_scaler = False
+            print(f"--- [Modern GPU] Using bfloat16 on {self.gpu_name} ---")
+        else:
+            self.precision = torch.float16
+            self.use_scaler = True
+            print(f"--- [Legacy GPU] Using float16 + Scaler on {self.gpu_name} ---")
+
+        self.scaler = torch.amp.GradScaler('cuda', enabled=self.use_scaler)
+
+        # CHANGE: accum_steps derived from the DataLoader's real batch_size,
+        # no num_gpus multiplier (see module docstring for why).
+        self.accum_steps = max(1, target_batch_size // batch_size)
+        actual_effective_batch = self.accum_steps * batch_size
+        print(f"--- [Compute] DataLoader batch_size={batch_size}, "
+              f"target_batch_size={target_batch_size} "
+              f"-> accum_steps={self.accum_steps} "
+              f"(actual effective batch = {actual_effective_batch}) ---")
+        if actual_effective_batch != target_batch_size:
+            print(f"--- [Compute] NOTE: {target_batch_size} is not a multiple "
+                  f"of batch_size={batch_size}, so actual effective batch is "
+                  f"{actual_effective_batch}, not exactly {target_batch_size}. ---")
+
+        self._accum_state = GradAccumState(self.accum_steps)
+
+        self.model = model.to(self.device)
+        self._compiled = False
+
+        if self.num_gpus > 1:
+            print(f"--- [Multi-GPU] {self.num_gpus} GPUs found. Wrapping in "
+                  f"DataParallel. One train_step still consumes the full "
+                  f"DataLoader batch_size={batch_size} total (split across "
+                  f"GPUs internally) -- accum_steps above already accounts "
+                  f"for this correctly. GPU-0 carries a heavier memory load "
+                  f"than the rest; don't assume linear scaling. ---")
+            self.model = nn.DataParallel(self.model)
+
+    def compile_model(self):
+        if self._compiled:
+            return self.model
+        try:
+            print("--- [Optimizer] Attempting torch.compile... ---")
+            if isinstance(self.model, nn.DataParallel):
+                inner = torch.compile(self.model.module)
+                self.model = nn.DataParallel(inner)
+            else:
+                self.model = torch.compile(self.model)
+            self._compiled = True
+            print("--- [Optimizer] torch.compile requested successfully "
+                  "(verify with a real batch before trusting it). ---")
+        except Exception as e:
+            print(f"--- [Optimizer] Compile failed: {e}. Using eager mode. ---")
+        return self.model
+
+    def train_step(self, optimizer, criterion, lr_scheduler, input_img, gt_img):
+        """No `i` argument needed anymore -- accumulation position is
+        tracked internally and persists across epochs."""
+        self.model.train()
+
+        if self._accum_state.should_zero_grad():
+            optimizer.zero_grad(set_to_none=True)
+
+        input_img = input_img.to(self.device, non_blocking=True)
+        gt_img = gt_img.to(self.device, non_blocking=True)
+
+        with torch.amp.autocast('cuda', dtype=self.precision):
+            output = self.model(input_img)
+            loss = criterion(output, gt_img) / self.accum_steps
+
+        if self.use_scaler:
+            self.scaler.scale(loss).backward()
+        else:
+            loss.backward()
+
+        do_step = self._accum_state.after_backward()
+
+        if do_step:
+            if self.use_scaler:
+                self.scaler.step(optimizer)
+                self.scaler.update()
+            else:
+                optimizer.step()
+            if lr_scheduler is not None and not isinstance(
+                    lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                lr_scheduler.step()
+
+        return loss.item() * self.accum_steps
+
+    def flush(self, optimizer):
+        """Call once, after the ENTIRE training loop ends (or right before
+        an early-stop break) -- steps on any leftover accumulated gradient
+        from a partial final group so it isn't silently discarded."""
+        if not self._accum_state.flush_needed():
+            return False
+        if self.use_scaler:
+            self.scaler.step(optimizer)
+            self.scaler.update()
+        else:
+            optimizer.step()
+        self._accum_state.pending = False
+        print("--- [Compute] Flushed leftover accumulated gradient at "
+              "end of training. ---")
+        return True
+
+    @torch.no_grad()
+    def eval_step(self, criterion, input_img, gt_img):
+        self.model.eval()
+        input_img = input_img.to(self.device, non_blocking=True)
+        gt_img = gt_img.to(self.device, non_blocking=True)
+
+        with torch.amp.autocast('cuda', dtype=self.precision):
+            output = self.model(input_img)
+            loss = criterion(output, gt_img)
+
+        return loss.item(), output
+class IntensityProfileLoss(nn.Module):
+    def __init__(self, edge_percentile=85.0):
+        super().__init__()
+        self.edge_percentile = edge_percentile
+        self.register_buffer('kernel_x', torch.tensor([[-1., 0., 1.]]).view(1, 1, 1, 3) / 2.0)
+        self.register_buffer('kernel_y', torch.tensor([[-1.], [0.], [1.]]).view(1, 1, 3, 1) / 2.0)
+
+    def _gradient_magnitude(self, img):
+        gx = F.conv2d(img, self.kernel_x, padding=(0, 1))
+        gy = F.conv2d(img, self.kernel_y, padding=(1, 0))
+        return torch.sqrt(gx ** 2 + gy ** 2 + 1e-8)
+
+    def forward(self, pred, target):
+        pred_f, target_f = pred.float(), target.float()
+        target_grad = self._gradient_magnitude(target_f)
+        pred_grad = self._gradient_magnitude(pred_f)
+
+        # Fixed GT-only edge mask, detached -- the model cannot reduce
+        # this loss by changing which pixels get penalized, only by
+        # matching the actual slope magnitude at GT's true edges.
+        with torch.no_grad():
+            b = target_grad.shape[0]
+            mask = torch.zeros_like(target_grad)
+            for i in range(b):
+                flat = target_grad[i].reshape(-1)
+                thresh = torch.quantile(flat, self.edge_percentile / 100.0)
+                mask[i] = (target_grad[i] > thresh).float()
+
+        diff = (pred_grad - target_grad).abs() * mask
+        return diff.sum() / (mask.sum() + 1e-6)
 def ensure_calib_stats(data_root, p_low_pct=1.0, p_high_pct=99.0):
     """Computes calib_stats.json automatically if it doesn't already exist,
     so train.py is fully self-contained -- no separate calibrate_stats.py
@@ -114,7 +302,7 @@ def compute_psnr(pred, target, max_val=1.0):
 
 
 def run_training_loop(tag, config, model, criterion, train_loader, val_loader,
-                       p_low, p_high, extra_ckpt_fields=None):
+                       p_low, p_high, extra_ckpt_fields=None, save_path=None):
     """Shared training loop used by both stages -- identical logic to the
     original train_baseline.py / finetune_profile.py scripts, just
     factored out so the two stages don't duplicate ~80 lines each."""
@@ -171,8 +359,12 @@ def run_training_loop(tag, config, model, criterion, train_loader, val_loader,
                          "p_low": p_low, "p_high": p_high}
             if extra_ckpt_fields:
                 save_dict.update(extra_ckpt_fields)
-            torch.save(save_dict, ckpt_path)
-            print(f"  -> new best val_loss, saved to {ckpt_path}")
+            if save_path:
+                torch.save(save_dict, save_path)
+                print(f"  -> new best val_loss, saved to {save_path}")
+            else:
+                torch.save(save_dict, ckpt_path)
+                print(f"  -> new best val_loss, saved to {ckpt_path}")
         else:
             epochs_since_improvement += 1
             print(f"  -> val_loss did not improve "
@@ -247,7 +439,7 @@ def train_finetune(data_root, p_low, p_high, train_loader, val_loader,
         scheduler_patience=2, early_stop_patience=5,
         num_workers=min(8, os.cpu_count() or 1),
         num_epochs=15,
-        checkpoint_dir=f"./weights",
+        checkpoint_dir=f"./weights",  # final submitted model
         finetune_from=base_ckpt_path,
     )
     print("\n" + "=" * 60)
@@ -255,7 +447,7 @@ def train_finetune(data_root, p_low, p_high, train_loader, val_loader,
     print("=" * 60)
     print("Config:", config)
     os.makedirs(config["checkpoint_dir"], exist_ok=True)
-
+    final_model_path = os.path.join(config["checkpoint_dir"], "final_model.pt")
     model = SemiRestoreNet_V2(dim=config["dim"], num_blocks=config["num_blocks"],
                                scale_factor=config["scale_factor"])
     model.load_state_dict(ckpt["model_state"], strict=False)
@@ -274,7 +466,7 @@ def train_finetune(data_root, p_low, p_high, train_loader, val_loader,
         return base_criterion(pred, target) + config["profile_weight"] * profile_criterion(pred, target)
 
     return run_training_loop("PROFILE-FT", config, model, criterion,
-                              train_loader, val_loader, p_low, p_high)
+                              train_loader, val_loader, p_low, p_high, save_path=final_model_path)
 
 
 def main():
