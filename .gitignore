@@ -1,4 +1,5 @@
 env/*
+.conda/*
 *.exe
 data/test/*
 data/train/*
@@ -6,5 +7,6 @@ data/*
 pycache/*
 *.pyc
 
-
+__pycache__/*
+*.pkl
 test_results/*
