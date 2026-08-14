@@ -3,6 +3,11 @@
 ## Setup
 
 ```bash
+git clone -b vfinal https://github.com/NithiishSD/kla_hackathon
+```
+```bash
+
+
 pip install -r requirements.txt
 ```
 
