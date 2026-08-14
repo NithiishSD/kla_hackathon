@@ -3,7 +3,13 @@
 ## Setup
 
 ```bash
-pip install -r requirements.txt
+git clone -b vfinal https://github.com/NithiishSD/kla_hackathon
+cd kla_hackathon/
+```
+```bash
+
+
+pip install -r requirements.txt --break-system-packages
 ```
 
 ## Evaluation
