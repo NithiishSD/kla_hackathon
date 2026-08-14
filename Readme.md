@@ -9,7 +9,7 @@ cd kla_hackathon/
 ```bash
 
 
-pip install -r requirements.txt
+pip install -r requirements.txt --break-system-packages
 ```
 
 ## Evaluation
