@@ -4,6 +4,7 @@
 
 ```bash
 git clone -b vfinal https://github.com/NithiishSD/kla_hackathon
+cd kla_hackathon/
 ```
 ```bash
 
